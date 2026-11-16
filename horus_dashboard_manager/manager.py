@@ -46,7 +46,7 @@ def digest(value):
     return hashlib.sha256(canonical(value).encode("utf-8")).hexdigest()
 
 
-def check_config(config):
+def check_config(config, restoring=False):
     if not isinstance(config, dict) or not isinstance(config.get("views"), list) or not config["views"]:
         raise BridgeError("Configuration must contain at least one dashboard view")
     if len(canonical(config).encode("utf-8")) > MAX_CONFIG_BYTES:
@@ -56,7 +56,7 @@ def check_config(config):
     def walk(node):
         if isinstance(node, dict):
             for key, value in node.items():
-                if key in ("service", "perform_action") and isinstance(value, str) and value in disallowed:
+                if not restoring and key in ("service", "perform_action") and isinstance(value, str) and value in disallowed:
                     raise BridgeError("Unlock/disarm shortcuts require separate security review")
                 walk(value)
         elif isinstance(node, list):
@@ -66,7 +66,7 @@ def check_config(config):
     return config
 
 
-def ha_call(command, **args):
+def ha_call(command, *, restore_original=False, **args):
     if command not in ("lovelace/config", "lovelace/config/save"):
         raise BridgeError("Unsupported Home Assistant operation")
     if args.get("url_path") != PATH:
@@ -76,7 +76,7 @@ def ha_call(command, **args):
     if command == "lovelace/config/save" and set(args) != {"url_path", "config"}:
         raise BridgeError("Invalid dashboard save request")
     if command == "lovelace/config/save":
-        check_config(args["config"])
+        check_config(args["config"], restoring=restore_original)
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
         raise BridgeError("Supervisor token unavailable")
@@ -103,8 +103,9 @@ def read_dashboard():
     return result
 
 
-def save_dashboard(config):
-    ha_call("lovelace/config/save", url_path=PATH, config=check_config(config))
+def save_dashboard(config, restoring=False):
+    ha_call("lovelace/config/save", restore_original=restoring,
+            url_path=PATH, config=check_config(config, restoring=restoring))
 
 
 def github_token():
@@ -267,7 +268,7 @@ def apply_proposal(requested_sha):
     except Exception:
         # Best-effort repair to the verified pre-apply configuration.
         try:
-            save_dashboard(before)
+            save_dashboard(before, restoring=True)
             if digest(read_dashboard()) != prior_hash:
                 LOG.error("Rollback verification failed; check dashboard manually")
         except Exception:
@@ -309,7 +310,7 @@ def rollback_last():
     if digest(previous) != state.get("before_sha256"):
         raise BridgeError("Backup hash verification failed")
     backup(live)
-    save_dashboard(previous)
+    save_dashboard(previous, restoring=True)
     if digest(read_dashboard()) != digest(previous):
         raise BridgeError("Restored configuration did not verify")
     state["rolled_back"] = True
@@ -419,7 +420,7 @@ class Handler(BaseHTTPRequestHandler):
                         before, after, fromfile="CURRENT", tofile="PROPOSED", lineterm=""))
                     display_diff = changes[:110_000]
                     if len(changes) > len(display_diff):
-                        display_diff += "\n[Diff truncated for display]"
+                        raise BridgeError("Proposal diff exceeds safe preview size")
                     extra = ('<input type="hidden" name="proposal_sha" value="' +
                              html.escape(sha, quote=True) + '">')
                     content = ('<p><strong>Change:</strong> ' + html.escape(proposed["summary"]) + '</p>'
