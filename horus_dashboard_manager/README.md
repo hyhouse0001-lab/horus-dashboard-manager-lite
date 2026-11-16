@@ -1,4 +1,4 @@
-# HORUS Dashboard Manager Lite v0.2.3
+# HORUS Dashboard Manager Lite v0.2.4
 
 **One dashboard, no copy/paste.** This Home Assistant add-on reads and edits only `fuller-family-test`, using the Home Assistant Core WebSocket API with Supervisor authentication.
 
@@ -14,3 +14,8 @@
 - This add-on does not execute GitHub code, shell scripts, or Home Assistant device actions.
 
 For setup, see [INSTALLATION.md](../INSTALLATION.md). The public repository contains source code only, not the household dashboard.
+
+## v0.2.4 narrow household exception
+Although Lovelace synchronization remains restricted to `fuller-family-test`, clicking **Install Family Controls** explicitly opts in to create one named Home Assistant toggle helper and four pre-defined scripts. The operation accepts no arbitrary script bodies, entity IDs or external commands from the browser or GitHub. It is not performed automatically by applying a dashboard proposal. It requires a separate approval click.
+
+The 15-second updater is an independent add-on with its own Supervisor manager permissions, not included in the Dashboard Manager runtime.
