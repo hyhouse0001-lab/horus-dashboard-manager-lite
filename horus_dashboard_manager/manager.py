@@ -336,26 +336,79 @@ def rollback_last():
 
 
 def page(title, content):
-    style = """body{font:16px system-ui,sans-serif;max-width:860px;margin:3rem auto;
-    padding:1rem;color:#ebf0f7;background:#101722}main{background:#1d293b;border-radius:14px;
-    padding:1.5rem}a{color:#a9ceff}button{background:#397fe0;color:white;border:0;border-radius:8px;
-    padding:13px 18px;font:inherit;cursor:pointer;margin:7px 0}button:disabled{background:#667281}
-    .danger{background:#ac4853}.muted{color:#bdc9d8}form{margin:10px 0}
-    pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:55vh;overflow:auto;
-    border:1px solid #425167;padding:12px;background:#101722}
-    code{overflow-wrap:anywhere}h1{font-size:1.45rem}"""
+    # Zero-JavaScript, CSP-compatible Home Assistant ingress interface.
+    style = """*{box-sizing:border-box}body{font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,
+    "Segoe UI",sans-serif;margin:0;min-height:100vh;padding:clamp(18px,4vw,44px);
+    color:#edf7ff;background:radial-gradient(circle at 75% 0%,#123e68 0%,transparent 42%),
+    linear-gradient(140deg,#08111f 0%,#0d1c30 55%,#06101d 100%)}
+    body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background-image:linear-gradient(rgba(60,112,170,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(60,112,170,.045) 1px,transparent 1px);background-size:46px 46px}
+    main{max-width:940px;margin:0 auto;background:linear-gradient(145deg,#16273d,#0e1a2b);
+    padding:clamp(22px,3vw,36px);border:1px solid #365e81;border-radius:22px;
+    box-shadow:0 18px 70px #020814a8,inset 0 1px 0 #44668855;position:relative;overflow:hidden}
+    main:before{content:"";height:4px;position:absolute;top:0;left:0;right:0;
+    background:linear-gradient(90deg,#61eabc,#5ad5ff 50%,#b7a0fa)}
+    .brand{display:flex;align-items:center;gap:13px;margin-bottom:22px}
+    .mark{width:49px;height:49px;display:grid;place-items:center;border-radius:13px;
+    color:#79eeff;background:#10364d;border:1px solid #55d3f699;
+    box-shadow:0 0 25px #16b6e42c;font-weight:900;font-size:23px;letter-spacing:-3px}
+    .eyebrow{margin:0;color:#68c9eb;letter-spacing:2px;font-size:11px;font-weight:700}
+    h1{font-size:clamp(23px,3vw,31px);line-height:1.18;margin:3px 0 0;letter-spacing:.2px}
+    h2{font-size:14px;letter-spacing:1.5px;text-transform:uppercase;color:#84ddec;margin:0 0 14px}
+    p{margin:13px 0;color:#c9d8e6}.muted{color:#9fb3c8;font-size:13px}
+    strong{color:#eff8ff}.status{display:inline-block;border:1px solid #37677b;
+    color:#96eeff;background:#143247;border-radius:99px;padding:5px 12px;
+    font-size:12px;font-weight:700;letter-spacing:.5px}
+    .module{padding:18px;margin:15px 0;border-radius:16px;border:1px solid #304c66;
+    background:linear-gradient(115deg,#172d46,#14243a 70%)}
+    .module.good{border-color:#3a846e}.module.alert{border-color:#986358}
+    .actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:18px 0}
+    form{margin:0}.actions form{display:block}
+    .control,button{display:flex;align-items:center;justify-content:center;text-align:center;
+    gap:12px;min-height:57px;width:100%;padding:14px 17px;border-radius:13px;
+    text-decoration:none;font-size:15px;font-family:inherit;font-weight:750;
+    letter-spacing:.2px;line-height:1.4;cursor:pointer;transition:background .15s,border-color .15s;
+    background:#163e5c;color:#e6faff;border:1px solid #4d93b5;box-shadow:inset 0 1px 0 #ffffff18}
+    .control:hover,button:hover{background:#205375;border-color:#6ae3f1}
+    .control:focus-visible,button:focus-visible{outline:3px solid #77f2dd;outline-offset:3px}
+    .primary{background:linear-gradient(110deg,#125c69,#176882);border-color:#5adbd2;color:#f2ffff}
+    .primary:hover{background:#1b7887}
+    .danger{background:#48232d;border-color:#cb6973;color:#fff0f2}.danger:hover{background:#713340}
+    .secondary{background:#23344d;border-color:#5b7590;color:#edf5ff}
+    .control:before,button:before{content:"";width:8px;height:8px;border-radius:3px;
+    flex:0 0 auto;background:#70e8ee;box-shadow:0 0 12px #70e8ee55}
+    .danger:before{background:#ff8c9c;box-shadow:0 0 12px #f7889a55}
+    button:disabled{opacity:.48;cursor:not-allowed}.module input{color:inherit}
+    pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:55vh;overflow:auto;
+    font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#071322;
+    color:#cbe7fb;border:1px solid #42607a;padding:17px;border-radius:12px}
+    code{color:#97eafe}a:not(.control){color:#83d9ff}
+    @media(max-width:520px){.actions{grid-template-columns:1fr}.brand{align-items:flex-start}}
+    """
     body = ('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
             '<meta charset="utf-8"><title>' + html.escape(title) + '</title>'
-            '<style>' + style + '</style></head><body><main><h1>' +
-            html.escape(title) + '</h1>' + content + '</main></body></html>')
+            '<style>' + style + '</style></head><body><main><header class="brand">'
+            '<div class="mark">H</div><div><p class="eyebrow">HORUS / FULLER FAMILY</p><h1>' +
+            html.escape(title) + '</h1></div></header>' + content + '</main></body></html>')
     return body.encode("utf-8")
 
 
 def form_button(action, label, extra="", danger=False):
+    if action not in ("/sync", "/apply", "/rollback"):
+        raise ValueError("Invalid form action")
     return ('<form action="' + html.escape(action.lstrip("/"), quote=True) + '" method="post">'
             '<input type="hidden" name="csrf" value="' + html.escape(CSRF, quote=True) + '">'
-            + extra + '<button class="' + ("danger" if danger else "") +
+            + extra + '<button class="control ' + ("danger" if danger else "primary") +
             '" type="submit">' + html.escape(label) + '</button></form>')
+
+
+def action_link(path, label, secondary=False):
+    if path not in ("test", "preview", "./"):
+        raise ValueError("Invalid navigation target")
+    return ('<a class="control ' + ("secondary" if secondary else "primary") +
+            '" href="' + html.escape(path, quote=True) + '">' +
+            html.escape(label) + '</a>')
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -404,22 +457,26 @@ class Handler(BaseHTTPRequestHandler):
             except BridgeError:
                 enabled = False
             state = state_read()
-            content = ('<p class="muted">Only target: <strong>Fuller Family Test</strong> ('
-                       + html.escape(PATH) + '). No automated deployment.</p>'
-                       '<p><a href="test">Test Home Assistant connection</a></p>')
+            content = ('<div class="module good"><span class="status">SINGLE DASHBOARD</span>'
+                       '<p><strong>FULLER FAMILY TEST</strong></p></div>')
             if not enabled:
-                content += ('<p><strong>Setup needed:</strong> Go to the add-on Configuration tab, '
-                            'set the GitHub token, save, and restart this add-on.</p>')
+                content += ('<div class="module alert"><h2>Connect Private GitHub</h2>'
+                            '<p>Set the GitHub token under the add-on Configuration tab, save, '
+                            'then restart the add-on.</p></div>')
+                content += '<div class="actions">' + action_link("test", "Test connection") + '</div>'
             else:
-                content += ('<p>Private GitHub connection configured. '
-                            'Sync the live dashboard so ChatGPT can inspect it.</p>'
-                            + form_button("/sync", "1. Sync current dashboard to private GitHub")
-                            + '<p><a href="preview">2. Preview proposed update</a></p>')
+                content += ('<div class="module"><h2>Dashboard Controls</h2><div class="actions">'
+                            + form_button("/sync", "Sync dashboard to GitHub")
+                            + action_link("preview", "Preview proposed update")
+                            + action_link("test", "Test connection", secondary=True)
+                            + '</div></div>')
                 if state.get("backup") and not state.get("rolled_back"):
-                    content += form_button("/rollback", "Restore previous dashboard", danger=True)
-            content += ('<p class="muted">Every edit requires explicit approval in this interface. '
-                        'All other Home Assistant dashboards are excluded.</p>')
-            self.show(200, "HORUS Dashboard Manager", content)
+                    content += ('<div class="module"><h2>Recovery</h2><div class="actions">'
+                                + form_button("/rollback", "Restore previous dashboard", danger=True)
+                                + '</div></div>')
+            content += ('<p class="muted">Only Fuller Family Test can be changed. '
+                        'A proposal requires your approval before saving.</p>')
+            self.show(200, "Dashboard Manager", content)
         elif url.path == "/preview":
             with LOCK:
                 try:
@@ -438,14 +495,14 @@ class Handler(BaseHTTPRequestHandler):
                     content = ('<p><strong>Change:</strong> ' + html.escape(proposed["summary"]) + '</p>'
                                '<p>Current views: ' + str(len(live["views"])) +
                                ' | Proposed views: ' + str(len(proposed["config"]["views"])) + '</p>'
-                               '<p>Proposed changes (JSON diff):</p><pre>' +
+                               '<h2>Review Changes</h2><pre>' +
                                html.escape(display_diff) + '</pre>' +
-                               form_button("/apply", "Approve and apply this dashboard update", extra) +
-                               '<p><a href="./">Cancel</a></p>')
+                               '<div class="actions">' + form_button("/apply", "Approve & Apply", extra) + '</div>' +
+                               '<div class="actions">' + action_link("./", "Cancel", secondary=True) + '</div>')
                     self.show(200, "Review Fuller Family Test update", content)
                 except Exception as exc:
                     self.show(409, "Not ready to apply",
-                              "<p>" + html.escape(str(exc)) + '</p><p><a href="./">Back</a></p>')
+                              "<p>" + html.escape(str(exc)) + '</p><div class="actions">' + action_link("./", "Back", secondary=True) + '</div>')
         else:
             self.show(404, "Not found", "<p>That action is not available.</p>")
 
@@ -485,12 +542,12 @@ class Handler(BaseHTTPRequestHandler):
                     message = ("<p>Last deployed dashboard restored and verified. Views: " +
                                str(result["views"]) + ".</p>")
             LOG.info("%s succeeded (Fuller Family Test only)", route.path)
-            self.show(200, title, message + '<p><a href="./">Back to dashboard manager</a></p>')
+            self.show(200, title, message + '<div class="actions">' + action_link("./", "Dashboard Manager", secondary=True) + '</div>')
         except Exception as exc:
             LOG.warning("Action %s failed: %s", route.path, type(exc).__name__)
             detail = str(exc) if isinstance(exc, BridgeError) else "Unexpected operation failure; inspect add-on logs"
             self.show(409, "Action failed", "<p>" + html.escape(detail) +
-                      '</p><p><a href="./">Back to manager</a></p>')
+                      '</p><div class="actions">' + action_link("./", "Dashboard Manager", secondary=True) + '</div>')
 
     def do_PUT(self):
         self.show(405, "Not allowed", "<p>Only approved UI actions are supported.</p>")
