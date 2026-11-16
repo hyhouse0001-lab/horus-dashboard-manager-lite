@@ -39,6 +39,10 @@ class BridgeError(Exception):
     """Safe, short error suitable for an authenticated ingress page."""
 
 
+class MissingControls(BridgeError):
+    """Owner must approve installation of the required fixed device scripts."""
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
 
@@ -234,21 +238,7 @@ def load_proposal():
     if not isinstance(summary, str) or not (1 <= len(summary) <= 500):
         raise BridgeError("Proposal requires a short change summary")
     check_config(document.get("config"))
-    if "script.horus_heru_sleep" in canonical(document["config"]):
-        # Confirm that the separate owner-approved household setup exists.
-        entries = helper_command("input_boolean/list")
-        items = entries if isinstance(entries, list) else (
-            entries.get("items", []) if isinstance(entries, dict) else []
-        )
-        if not any(isinstance(row, dict) and row.get("id") == "horus_heru_sleeping"
-                   for row in items):
-            raise BridgeError("Open Dashboard Manager and select Install Family Controls first")
-        for script_id, expected in preset_scripts().items():
-            current = script_request(script_id)
-            config = current.get("config", current) if isinstance(current, dict) else {}
-            if any(config.get(field) != expected[field]
-                   for field in ("alias", "sequence", "mode")):
-                raise BridgeError("Family control script not ready: " + script_id)
+    validate_required_controls(document["config"])
     return document, sha
 
 
@@ -371,6 +361,14 @@ def rollback_last():
 SLEEP_HELPER = "input_boolean.horus_heru_sleeping"
 SPOT = "media_player.bedroom_master_bdrm_spot"
 HUMIDIFIER = "humidifier.basement_dehumidifier"
+AC_UNITS = {
+    "living_room": "climate.living_room_living_room_ac",
+    "my_bedroom": "climate.bedroom_my_bedroom_ac",
+    "dining_room": "climate.dining_room_dining_room_ac",
+    "heru_room": "climate.herus_room_herus_ac",
+    "guest_room": "climate.guest_bedroom_guest_room_ac",
+}
+NEST = "climate.nest_learning_thermostat_4th_gen"
 
 
 def preset_scripts():
@@ -379,7 +377,7 @@ def preset_scripts():
         if data is not None:
             out["data"] = data
         return out
-    return {
+    presets = {
         "horus_heru_sleep": {
             "alias": "HORUS - Heru Sleeping", "mode": "single",
             "sequence": [
@@ -427,6 +425,21 @@ def preset_scripts():
             ],
         },
     }
+    for room, entity in AC_UNITS.items():
+        for direction, sign in (("up", "+"), ("down", "-")):
+            template = (
+                "{{ [90, [60, ((state_attr('" + entity +
+                "', 'temperature') | float(72)) " + sign + " 1)] | max] | min | int }}"
+            )
+            presets["horus_ac_" + room + "_" + direction] = {
+                "alias": "HORUS - " + room.replace("_", " ").title() +
+                         " AC Temperature " + direction.title(),
+                "mode": "single",
+                "sequence": [step(
+                    "climate.set_temperature", entity, {"temperature": template}
+                )],
+            }
+    return presets
 
 
 def helper_command(command, **args):
@@ -509,6 +522,54 @@ def install_family_controls():
             continue
         script_request(key, "POST", preset)
     return len(preset_scripts())
+
+
+def required_preset_ids(config):
+    presets = preset_scripts()
+    found = set()
+    def inspect(node):
+        if isinstance(node, list):
+            for item in node:
+                inspect(item)
+        elif isinstance(node, dict):
+            if node.get("perform_action") == "script.turn_on":
+                ids = node.get("target", {}).get("entity_id")
+                if isinstance(ids, str) and ids.startswith("script.horus_"):
+                    ident = ids.removeprefix("script.")
+                    if ident not in presets:
+                        raise BridgeError("Unknown HORUS family control in proposal: " + ident)
+                    found.add(ident)
+            for value in node.values():
+                inspect(value)
+    inspect(config)
+    return found
+
+
+def validate_required_controls(config):
+    requested = required_preset_ids(config)
+    if "horus_heru_sleep" in requested or "horus_heru_awake" in requested:
+        entries = helper_command("input_boolean/list")
+        items = entries if isinstance(entries, list) else (
+            entries.get("items", []) if isinstance(entries, dict) else []
+        )
+        if not any(isinstance(row, dict) and row.get("id") == "horus_heru_sleeping"
+                   for row in items):
+            raise MissingControls("Heru sleep helper is not installed")
+    presets = preset_scripts()
+    missing = []
+    for script_id in sorted(requested):
+        expected = presets[script_id]
+        current = script_request(script_id)
+        actual = current.get("config", current) if isinstance(current, dict) else {}
+        if not isinstance(actual, dict) or any(
+            actual.get(field) != expected[field] for field in ("alias", "sequence", "mode")
+        ):
+            missing.append(script_id)
+    if missing:
+        raise MissingControls(
+            "Required controls need installation or updating: " + ", ".join(missing[:8]) +
+            (" (and more)" if len(missing) > 8 else "")
+        )
 
 
 def review_representation(config):
@@ -653,7 +714,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.8"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.9"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -689,7 +750,7 @@ class Handler(BaseHTTPRequestHandler):
                             + action_link("test", "Test connection", secondary=True)
                             + '</div></div>')
                 content += ('<div class="module"><h2>Family Controls</h2>'
-                            '<p class="muted">Create or verify the Heru, basement humidity, and Nest temperature controls. '
+                            '<p class="muted">Create or verify the Heru, basement humidity, Nest and Frigidaire AC controls. '
                             'No device action occurs until a dashboard button is pressed.</p>'
                             '<div class="actions">'
                             + form_button("/setup-household", "Install / Update Family Controls")
@@ -725,6 +786,14 @@ class Handler(BaseHTTPRequestHandler):
                                '<div class="actions">' + form_button("/apply", "Approve & Apply", extra) + '</div>' +
                                '<div class="actions">' + action_link("./", "Cancel", secondary=True) + '</div>')
                     self.show(200, "Review Fuller Family Test update", content)
+                except MissingControls as exc:
+                    self.show(409, "Install Required Controls",
+                              "<div class='module alert'><p>" + html.escape(str(exc)) +
+                              "</p><p>These scripts are not installed yet. Setting up controls does not "
+                              "change an AC or thermostat until you press a dashboard control.</p></div>"
+                              '<div class="actions">' +
+                              form_button("/setup-household", "Install Required Controls") +
+                              action_link("./", "Cancel", secondary=True) + '</div>')
                 except Exception as exc:
                     self.show(409, "Not ready to apply",
                               "<p>" + html.escape(str(exc)) + '</p><div class="actions">' + action_link("./", "Back", secondary=True) + '</div>')
@@ -779,8 +848,9 @@ class Handler(BaseHTTPRequestHandler):
                 elif route.path == "/setup-household":
                     count = install_family_controls()
                     title = "Family Controls Ready"
-                    message = ("<p>Heru's sleeping helper and " + str(count) +
-                               " fixed household scripts are installed.</p>")
+                    message = ("<p>Heru, Nest, humidity, and room AC controls are installed (" + str(count) +
+                               " fixed scripts).</p><div class='actions'>" +
+                               action_link("preview", "Preview Dashboard Update") + "</div>")
                 elif route.path == "/apply":
                     sha = data.get("proposal_sha", [""])[0]
                     result = apply_proposal(sha)
