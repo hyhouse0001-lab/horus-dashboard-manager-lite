@@ -187,14 +187,19 @@ class DeploymentTests(unittest.TestCase):
 class FamilyControlsTests(unittest.TestCase):
     def test_presets_only_touch_selected_entities(self):
         p = manager.preset_scripts()
-        self.assertEqual(len(p), 4)
+        self.assertEqual(len(p), 6)
         self.assertEqual(p["horus_heru_sleep"]["sequence"][0]["data"]["volume_level"], 0.1)
         self.assertEqual(p["horus_heru_awake"]["sequence"][0]["data"]["volume_level"], 0.7)
         touched = {action["target"]["entity_id"] for cfg in p.values()
                    for action in cfg["sequence"]}
         self.assertEqual(touched, {"media_player.bedroom_master_bdrm_spot",
                                    "input_boolean.horus_heru_sleeping",
-                                   "humidifier.basement_dehumidifier"})
+                                   "humidifier.basement_dehumidifier",
+                                   "climate.nest_learning_thermostat_4th_gen"})
+        self.assertIn(" | min | int", p["horus_nest_temp_up"]["sequence"][0]["data"]["temperature"])
+        self.assertIn(" | max | int", p["horus_nest_temp_down"]["sequence"][0]["data"]["temperature"])
+        self.assertEqual(p["horus_nest_temp_up"]["sequence"][0]["action"], "climate.set_temperature")
+        self.assertEqual(p["horus_nest_temp_down"]["sequence"][0]["action"], "climate.set_temperature")
     def test_script_id_restriction(self):
         with self.assertRaises(manager.BridgeError):
             manager.script_request("someone_else_script", "POST", {})
