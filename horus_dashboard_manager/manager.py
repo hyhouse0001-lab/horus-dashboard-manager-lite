@@ -6,6 +6,7 @@ Supervisor WS proxy must be tested on HAOS before installation approval.
 import json
 import os
 import logging
+import html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -80,7 +81,33 @@ class Handler(BaseHTTPRequestHandler):
         if path.query or path.fragment:
             self._reply(400, {"error": "query_not_allowed"})
         elif path.path in ("/", "/health"):
-            self._reply(200, {"name": "HORUS Dashboard Manager", "version": "0.2.0", "mode": "read-only", "dashboard_writes": "disabled", "backend": "home-assistant-supervisor-websocket"})
+            if path.path == "/health":
+                self._reply(200, {"name": "HORUS Dashboard Manager Lite", "mode": "read-only", "status": "running"})
+                return
+            body = ("""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HORUS Dashboard Manager Lite</title>
+<style>body{font:16px system-ui;background:#101722;color:#edf2f8;max-width:650px;margin:4rem auto;padding:1rem}
+main{background:#1e293b;padding:1.5rem;border-radius:14px}a{display:inline-block;background:#4c91ed;color:white;
+padding:1rem;border-radius:9px;text-decoration:none;font-weight:700}</style></head><body><main>
+<h1>HORUS Dashboard Manager Lite</h1><p>Read-only diagnostic preview.</p>
+<p>Target: Fuller Family Test</p><a href="test">Test Dashboard Connection</a>
+<p>No dashboard writes, lock controls or automation changes are enabled.</p></main></body></html>""").encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif path.path == "/test":
+            try:
+                result = read_dashboard(PATH)
+                if not isinstance(result, dict) or not isinstance(result.get("views"), list):
+                    raise ValueError("Unexpected dashboard response")
+                self._reply(200, {"status": "connected", "dashboard": "Fuller Family Test", "views": len(result["views"]), "mode": "read-only"})
+            except Exception as exc:
+                logging.error("Dashboard connection test failed: %s: %s", type(exc).__name__, str(exc)[:160])
+                self._reply(503, {"status": "failed", "dashboard": "Fuller Family Test", "reason": type(exc).__name__, "mode": "read-only"})
         elif path.path == "/dashboards":
             try:
                 self._reply(200, {"dashboards": list_dashboards()})
