@@ -1,6 +1,7 @@
 import pathlib
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "horus_dashboard_manager"))
@@ -62,6 +63,71 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(manager.PRIVATE_REPO, "hyhouse0001-lab/horus-home-os")
         self.assertEqual(manager.SNAPSHOT_PATH, "dashboard_sync/fuller-family-test.current.json")
         self.assertEqual(manager.PROPOSAL_PATH, "dashboard_sync/fuller-family-test.proposal.json")
+
+
+class DeploymentTests(unittest.TestCase):
+    def test_happy_path_requires_matching_review_and_backs_up(self):
+        before = {"views": [{"title": "Before"}]}
+        after = {"views": [{"title": "After"}]}
+        candidate = {
+            "schema_version": 1, "dashboard": manager.PATH,
+            "base_sha256": manager.digest(before),
+            "summary": "Change the view title", "config": after,
+        }
+        live = [before]
+        def read():
+            return live[0]
+        def save(value):
+            live[0] = value
+        with patch.object(manager, "load_proposal", return_value=(candidate, "abc123")), \
+             patch.object(manager, "read_dashboard", side_effect=read), \
+             patch.object(manager, "save_dashboard", side_effect=save), \
+             patch.object(manager, "backup", return_value="backup.json") as backup, \
+             patch.object(manager, "state_write") as state_write, \
+             patch.object(manager, "github_put") as github_put:
+            result = manager.apply_proposal("abc123")
+        backup.assert_called_once_with(before)
+        self.assertEqual(result["views"], 1)
+        self.assertEqual(live[0], after)
+        self.assertTrue(result["synced"])
+        self.assertEqual(state_write.call_args.args[0]["before_sha256"], manager.digest(before))
+        self.assertEqual(state_write.call_args.args[0]["after_sha256"], manager.digest(after))
+        github_put.assert_called_once()
+
+    def test_changed_proposal_never_saves(self):
+        before = {"views": [{"title": "Before"}]}
+        candidate = {
+            "schema_version": 1, "dashboard": manager.PATH,
+            "base_sha256": manager.digest(before),
+            "summary": "Change view", "config": {"views": [{"title": "After"}]},
+        }
+        with patch.object(manager, "load_proposal", return_value=(candidate, "new-sha")), \
+             patch.object(manager, "read_dashboard") as read, \
+             patch.object(manager, "save_dashboard") as save:
+            with self.assertRaises(manager.BridgeError):
+                manager.apply_proposal("old-sha")
+        read.assert_not_called()
+        save.assert_not_called()
+
+    def test_external_edit_blocks_rollback(self):
+        deployed = {"views": [{"title": "After"}]}
+        current = {"views": [{"title": "Changed elsewhere"}]}
+        state = {
+            "backup": "backup.json", "rolled_back": False,
+            "after_sha256": manager.digest(deployed),
+        }
+        with patch.object(manager, "state_read", return_value=state), \
+             patch.object(manager, "read_dashboard", return_value=current), \
+             patch.object(manager, "save_dashboard") as save:
+            with self.assertRaises(manager.BridgeError):
+                manager.rollback_last()
+        save.assert_not_called()
+
+    def test_restore_may_recover_existing_lock_button(self):
+        previous = {"views": [{"cards": [{"tap_action": {"service": "lock.unlock"}}]}]}
+        self.assertEqual(manager.check_config(previous, restoring=True), previous)
+        with self.assertRaises(manager.BridgeError):
+            manager.check_config(previous)
 
 
 if __name__ == "__main__":
