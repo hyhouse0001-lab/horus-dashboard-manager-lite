@@ -1,0 +1,10 @@
+# Keep household data and secrets out of this public distribution repository.
+.env
+*.key
+*.pem
+*token*
+*secret*
+*.backup
+*.db
+/config/
+/data/
