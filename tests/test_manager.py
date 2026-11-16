@@ -233,5 +233,38 @@ class RingAlarmPermissionTests(unittest.TestCase):
 
 
 
+class PreviewDiffTests(unittest.TestCase):
+    def test_large_svg_has_readable_preview_and_full_exact_diff(self):
+        from urllib.parse import quote
+        artwork = "<svg xmlns='http://www.w3.org/2000/svg'><text>RING ALARM</text>" + ("x" * 150000) + "</svg>"
+        original = "data:image/svg+xml," + quote(artwork)
+        updated = original.replace("RING%20ALARM", "RING%20SECURITY")
+        before = {"views":[{"title":"Home","cards":[{"type":"picture-elements","image":original}]}]}
+        after = {"views":[{"title":"Home","cards":[{"type":"picture-elements","image":updated}]}]}
+        compact = manager.compare_dashboard_configs(before, after, compact=True)
+        exact = manager.compare_dashboard_configs(before, after, compact=False)
+        self.assertIn("SHA256", compact)
+        self.assertIn("RING ALARM", compact)
+        self.assertIn("RING SECURITY", compact)
+        self.assertLess(len(compact), 10000)
+        self.assertGreater(len(exact), 110000)
+        self.assertIn("data:image/svg+xml,", exact)
+        self.assertEqual(before["views"][0]["cards"][0]["image"], original)
+        self.assertEqual(after["views"][0]["cards"][0]["image"], updated)
+        self.assertIn('href="full-diff"', manager.action_link("full-diff", "Full diff"))
+
+    def test_svg_changes_are_detected_even_when_labels_match(self):
+        from urllib.parse import quote
+        first = "data:image/svg+xml," + quote('<svg><text>HOME</text><rect fill="blue"/></svg>')
+        second = "data:image/svg+xml," + quote('<svg><text>HOME</text><rect fill="red"/></svg>')
+        before = {"views":[{"cards":[{"image":first}]}]}
+        after = {"views":[{"cards":[{"image":second}]}]}
+        compact = manager.compare_dashboard_configs(before, after, compact=True)
+        self.assertIn("SHA256", compact)
+        self.assertIn("HOME", compact)
+        self.assertNotEqual(manager.review_representation(before),
+                            manager.review_representation(after))
+
+
 if __name__ == "__main__":
     unittest.main()
