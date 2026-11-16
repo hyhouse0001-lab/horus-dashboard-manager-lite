@@ -335,6 +335,132 @@ def rollback_last():
     return {"views": len(previous["views"])}
 
 
+
+# Explicit, fixed-scope setup for Heru sleep and humidity actions. This is NOT
+# a generic scripting endpoint; a human must click Install Family Controls.
+SLEEP_HELPER = "input_boolean.horus_heru_sleeping"
+SPOT = "media_player.bedroom_master_bdrm_spot"
+HUMIDIFIER = "humidifier.basement_dehumidifier"
+
+
+def preset_scripts():
+    def step(action, entity_id, data=None):
+        out = {"action": action, "target": {"entity_id": entity_id}}
+        if data is not None:
+            out["data"] = data
+        return out
+    return {
+        "horus_heru_sleep": {
+            "alias": "HORUS - Heru Sleeping", "mode": "single",
+            "sequence": [
+                step("media_player.volume_set", SPOT, {"volume_level": 0.1}),
+                step("input_boolean.turn_on", SLEEP_HELPER),
+            ],
+        },
+        "horus_heru_awake": {
+            "alias": "HORUS - Heru Awake", "mode": "single",
+            "sequence": [
+                step("media_player.volume_set", SPOT, {"volume_level": 0.7}),
+                step("input_boolean.turn_off", SLEEP_HELPER),
+            ],
+        },
+        "horus_basement_humidity_up": {
+            "alias": "HORUS - Raise Basement Humidity Target", "mode": "single",
+            "sequence": [
+                step("humidifier.set_humidity", HUMIDIFIER, {
+                    "humidity": "{{ [85, ((state_attr('humidifier.basement_dehumidifier','humidity') | float(45)) + 5)] | min | int }}"
+                }),
+            ],
+        },
+        "horus_basement_humidity_down": {
+            "alias": "HORUS - Lower Basement Humidity Target", "mode": "single",
+            "sequence": [
+                step("humidifier.set_humidity", HUMIDIFIER, {
+                    "humidity": "{{ [35, ((state_attr('humidifier.basement_dehumidifier','humidity') | float(45)) - 5)] | max | int }}"
+                }),
+            ],
+        },
+    }
+
+
+def helper_command(command, **args):
+    if command == "input_boolean/list":
+        if args:
+            raise BridgeError("Invalid helper list")
+    elif command == "input_boolean/create":
+        if args != {"name": "HORUS Heru Sleeping", "icon": "mdi:sleep"}:
+            raise BridgeError("Unapproved helper create")
+    else:
+        raise BridgeError("Unapproved helper command")
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        raise BridgeError("Supervisor token unavailable")
+    from websockets.sync.client import connect
+    with connect("ws://supervisor/core/websocket", open_timeout=8, close_timeout=3,
+                 max_size=MAX_RESPONSE) as ws:
+        if json.loads(ws.recv(timeout=8)).get("type") != "auth_required":
+            raise BridgeError("Unexpected helper challenge")
+        ws.send(json.dumps({"type": "auth", "access_token": token}))
+        if json.loads(ws.recv(timeout=8)).get("type") != "auth_ok":
+            raise BridgeError("Home Assistant helper authorization failed")
+        ws.send(json.dumps({"id": 1, "type": command, **args}))
+        result = json.loads(ws.recv(timeout=15))
+        if result.get("type") != "result" or not result.get("success"):
+            raise BridgeError("Home Assistant helper request failed")
+        return result.get("result")
+
+
+def script_request(script_id, method="GET", document=None):
+    if script_id not in preset_scripts() or method not in ("GET", "POST"):
+        raise BridgeError("Unapproved script operation")
+    if method == "POST" and document != preset_scripts()[script_id]:
+        raise BridgeError("Script differs from approved fixed preset")
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        raise BridgeError("Supervisor token unavailable")
+    req = Request("http://supervisor/core/api/config/script/config/" + script_id,
+                  method=method,
+                  data=None if document is None else json.dumps(document).encode("utf-8"),
+                  headers={"Authorization": "Bearer " + token,
+                           "Content-Type": "application/json"})
+    try:
+        with urlopen(req, timeout=20) as response:
+            body = response.read(100_000)
+            return json.loads(body) if body else {}
+    except HTTPError as exc:
+        if method == "GET" and exc.code == 404:
+            return None
+        raise BridgeError("Home Assistant script API HTTP " + str(exc.code)) from None
+    except (URLError, TimeoutError):
+        raise BridgeError("Home Assistant script API unreachable") from None
+
+
+def install_family_controls():
+    current = helper_command("input_boolean/list")
+    entries = current if isinstance(current, list) else (
+        current.get("items", []) if isinstance(current, dict) else []
+    )
+    if not isinstance(entries, list):
+        raise BridgeError("Unexpected helpers response")
+    helper = next((item for item in entries if isinstance(item, dict)
+                   and item.get("id") == "horus_heru_sleeping"), None)
+    if helper is not None and helper.get("name") != "HORUS Heru Sleeping":
+        raise BridgeError("Existing helper ID belongs to something else")
+    if helper is None:
+        added = helper_command("input_boolean/create",
+                               name="HORUS Heru Sleeping", icon="mdi:sleep")
+        if not isinstance(added, dict) or added.get("id") != "horus_heru_sleeping":
+            raise BridgeError("Helper ID did not match expected value")
+    for key, preset in preset_scripts().items():
+        existing = script_request(key)
+        if existing is not None:
+            if not isinstance(existing, dict) or existing.get("alias") != preset["alias"]:
+                raise BridgeError("Existing script conflicts with " + key)
+            continue
+        script_request(key, "POST", preset)
+    return 4
+
+
 def page(title, content):
     # Zero-JavaScript, CSP-compatible Home Assistant ingress interface.
     style = """*{box-sizing:border-box}body{font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,
@@ -396,7 +522,7 @@ def page(title, content):
 
 
 def form_button(action, label, extra="", danger=False):
-    if action not in ("/sync", "/apply", "/rollback"):
+    if action not in ("/sync", "/apply", "/rollback", "/setup-household"):
         raise ValueError("Invalid form action")
     return ('<form action="' + html.escape(action.lstrip("/"), quote=True) + '" method="post">'
             '<input type="hidden" name="csrf" value="' + html.escape(CSRF, quote=True) + '">'
@@ -442,7 +568,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.3"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.4"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -476,6 +602,12 @@ class Handler(BaseHTTPRequestHandler):
                             + form_button("/sync", "Sync dashboard to GitHub")
                             + action_link("preview", "Preview proposed update")
                             + action_link("test", "Test connection", secondary=True)
+                            + '</div></div>')
+                content += ('<div class="module"><h2>Family Controls</h2>'
+                            '<p class="muted">One-time install for Heru sleeping and basement humidity buttons. '
+                            'No device action occurs until a dashboard button is pressed.</p>'
+                            '<div class="actions">'
+                            + form_button("/setup-household", "Install Family Controls")
                             + '</div></div>')
                 if state.get("backup") and not state.get("rolled_back"):
                     content += ('<div class="module"><h2>Recovery</h2><div class="actions">'
@@ -517,7 +649,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return
         route = urlsplit(self.path)
-        if route.path not in ("/sync", "/apply", "/rollback") or route.query:
+        if route.path not in ("/sync", "/apply", "/rollback", "/setup-household") or route.query:
             self.show(405, "Not allowed", "<p>No other write operations are supported.</p>")
             return
         try:
@@ -535,6 +667,11 @@ class Handler(BaseHTTPRequestHandler):
                     message = ("<p>Current dashboard safely copied to the private GitHub repository. "
                                "Views: " + str(result["views"]) + ".</p>"
                                "<p>ChatGPT can now read the snapshot and prepare a proposal.</p>")
+                elif route.path == "/setup-household":
+                    count = install_family_controls()
+                    title = "Family Controls Ready"
+                    message = ("<p>Heru's sleeping helper and " + str(count) +
+                               " fixed household scripts are installed.</p>")
                 elif route.path == "/apply":
                     sha = data.get("proposal_sha", [""])[0]
                     result = apply_proposal(sha)
