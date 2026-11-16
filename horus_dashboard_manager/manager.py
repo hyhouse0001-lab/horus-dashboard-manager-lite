@@ -407,7 +407,10 @@ def preset_scripts():
             "sequence": [
                 step("humidifier.set_humidity", HUMIDIFIER, {
                     "humidity": "{{ [35, ((state_attr('humidifier.basement_dehumidifier','humidity') | float(45)) - 5)] | max | int }}"
-                    "horus_nest_temp_up": {
+                }),
+            ],
+        },
+        "horus_nest_temp_up": {
             "alias": "HORUS - Nest Increase Temperature", "mode": "single",
             "sequence": [
                 step("climate.set_temperature", "climate.nest_learning_thermostat_4th_gen", {
@@ -421,9 +424,6 @@ def preset_scripts():
                 step("climate.set_temperature", "climate.nest_learning_thermostat_4th_gen", {
                     "temperature": "{{ [50, ((state_attr('climate.nest_learning_thermostat_4th_gen', 'temperature') | float(74)) - 1)] | max | int }}"
                 }),
-            ],
-        },
-    }),
             ],
         },
     }
