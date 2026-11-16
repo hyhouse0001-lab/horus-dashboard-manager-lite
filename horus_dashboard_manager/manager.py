@@ -17,7 +17,8 @@ import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
+import re
 from urllib.request import Request, urlopen
 
 PATH = "fuller-family-test"
@@ -494,6 +495,41 @@ def install_family_controls():
     return 4
 
 
+def review_representation(config):
+    """Display data-image payloads by content hash, not a wall of URI-encoded SVG.
+
+    The exact unabridged diff is available separately. This is never the
+    configuration submitted to Home Assistant.
+    """
+    def walk(node):
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        if isinstance(node, dict):
+            return {key: walk(value) for key, value in node.items()}
+        if isinstance(node, str) and node.startswith("data:image/svg+xml,"):
+            if len(node) > 2_000_000:
+                raise BridgeError("SVG image exceeds preview limit")
+            raw = unquote(node.partition(",")[2])
+            fingerprint = hashlib.sha256(node.encode("utf-8")).hexdigest()
+            labels = [html.unescape(value).strip()[:75] for value in
+                      re.findall(r"<text\b[^>]*>([^<]*)</text>", raw, flags=re.I)]
+            label_text = "; ".join(x for x in labels[:12] if x)
+            return ("[SVG image: SHA256 " + fingerprint +
+                    ", " + str(len(node)) + " chars" +
+                    (", visible labels: " + label_text if label_text else "") + "]")
+        return node
+    return walk(config)
+
+
+def compare_dashboard_configs(before, after, compact=True):
+    old = review_representation(before) if compact else before
+    new = review_representation(after) if compact else after
+    prior = json.dumps(old, ensure_ascii=False, indent=2, sort_keys=True).splitlines()
+    proposed = json.dumps(new, ensure_ascii=False, indent=2, sort_keys=True).splitlines()
+    return "\n".join(difflib.unified_diff(
+        prior, proposed, fromfile="CURRENT", tofile="PROPOSED", lineterm=""))
+
+
 def page(title, content):
     # Zero-JavaScript, CSP-compatible Home Assistant ingress interface.
     style = """*{box-sizing:border-box}body{font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,
@@ -564,7 +600,7 @@ def form_button(action, label, extra="", danger=False):
 
 
 def action_link(path, label, secondary=False):
-    if path not in ("test", "preview", "./"):
+    if path not in ("test", "preview", "full-diff", "./"):
         raise ValueError("Invalid navigation target")
     return ('<a class="control ' + ("secondary" if secondary else "primary") +
             '" href="' + html.escape(path, quote=True) + '">' +
@@ -601,7 +637,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.4"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.7"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -655,26 +691,50 @@ class Handler(BaseHTTPRequestHandler):
                     proposed, sha = load_proposal()
                     live = read_dashboard()
                     require_fresh(proposed, live)
-                    before = json.dumps(live, ensure_ascii=False, indent=2, sort_keys=True).splitlines()
-                    after = json.dumps(proposed["config"], ensure_ascii=False, indent=2, sort_keys=True).splitlines()
-                    changes = "\n".join(difflib.unified_diff(
-                        before, after, fromfile="CURRENT", tofile="PROPOSED", lineterm=""))
-                    display_diff = changes[:110_000]
-                    if len(changes) > len(display_diff):
-                        raise BridgeError("Proposal diff exceeds safe preview size")
+                    display_diff = compare_dashboard_configs(live, proposed["config"], compact=True)
+                    if len(display_diff) > 240_000:
+                        raise BridgeError("Compact preview is too large; narrow the proposed update")
                     extra = ('<input type="hidden" name="proposal_sha" value="' +
                              html.escape(sha, quote=True) + '">')
                     content = ('<p><strong>Change:</strong> ' + html.escape(proposed["summary"]) + '</p>'
                                '<p>Current views: ' + str(len(live["views"])) +
                                ' | Proposed views: ' + str(len(proposed["config"]["views"])) + '</p>'
-                               '<details><summary>Inspect exact configuration changes</summary><pre>' +
+                               '<details><summary>Review changes (embedded graphics summarized by SHA-256)</summary><pre>' +
                                html.escape(display_diff) + '</pre></details>' +
+                               '<p class="muted">SVG graphics are summarized here for readability. '
+                               'Their full exact content can be reviewed separately.</p>' +
+                               '<div class="actions">' +
+                               action_link("full-diff", "View complete, unabridged diff", secondary=True) +
+                               '</div>' +
                                '<div class="actions">' + form_button("/apply", "Approve & Apply", extra) + '</div>' +
                                '<div class="actions">' + action_link("./", "Cancel", secondary=True) + '</div>')
                     self.show(200, "Review Fuller Family Test update", content)
                 except Exception as exc:
                     self.show(409, "Not ready to apply",
                               "<p>" + html.escape(str(exc)) + '</p><div class="actions">' + action_link("./", "Back", secondary=True) + '</div>')
+        elif url.path == "/full-diff":
+            with LOCK:
+                try:
+                    proposed, sha = load_proposal()
+                    live = read_dashboard()
+                    require_fresh(proposed, live)
+                    exact = compare_dashboard_configs(live, proposed["config"], compact=False)
+                    if len(exact) > 2_500_000:
+                        raise BridgeError("Full diff exceeds rendering limit")
+                    content = ('<p>Unabridged comparison of the live dashboard and '
+                               'the proposed GitHub revision. Nothing is omitted.</p>'
+                               '<p class="muted">Proposal file SHA: ' +
+                               html.escape(sha) + '</p><pre>' + html.escape(exact) +
+                               '</pre><div class="actions">' +
+                               action_link("preview", "Back to review", secondary=True) +
+                               '</div>')
+                    self.show(200, "Full Dashboard Diff", content)
+                except Exception as exc:
+                    self.show(409, "Full Diff Unavailable",
+                              "<p>" + html.escape(str(exc)) +
+                              '</p><div class="actions">' +
+                              action_link("preview", "Back to review", secondary=True) +
+                              '</div>')
         else:
             self.show(404, "Not found", "<p>That action is not available.</p>")
 
