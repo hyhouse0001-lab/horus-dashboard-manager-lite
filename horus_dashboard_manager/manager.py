@@ -454,7 +454,11 @@ def install_family_controls():
     for key, preset in preset_scripts().items():
         existing = script_request(key)
         if existing is not None:
-            if not isinstance(existing, dict) or existing.get("alias") != preset["alias"]:
+            # Never silently reuse someone else's script with the same ID.
+            config = existing.get("config", existing) if isinstance(existing, dict) else {}
+            if not isinstance(config, dict) or any(
+                config.get(field) != preset[field] for field in ("alias", "sequence", "mode")
+            ):
                 raise BridgeError("Existing script conflicts with " + key)
             continue
         script_request(key, "POST", preset)
