@@ -51,13 +51,25 @@ def check_config(config, restoring=False):
         raise BridgeError("Configuration must contain at least one dashboard view")
     if len(canonical(config).encode("utf-8")) > MAX_CONFIG_BYTES:
         raise BridgeError("Dashboard configuration is too large")
-    # Until explicitly reviewed, prevent direct unlock/disarm shortcuts.
-    disallowed = {"lock.unlock", "alarm_control_panel.alarm_disarm"}
+    # Narrow exception for this exact front-door lock, with explicit confirmation.
+    # Never permit an unconfirmed unlock or any alarm disarm shortcut.
     def walk(node):
         if isinstance(node, dict):
             for key, value in node.items():
-                if not restoring and key in ("service", "perform_action") and isinstance(value, str) and value in disallowed:
-                    raise BridgeError("Unlock/disarm shortcuts require separate security review")
+                if not restoring and key in ("service", "perform_action") and isinstance(value, str):
+                    if value == "alarm_control_panel.alarm_disarm":
+                        raise BridgeError("Alarm disarm shortcuts are not allowed")
+                    if value == "lock.unlock":
+                        allowed = (
+                            key == "perform_action"
+                            and node.get("action") == "perform-action"
+                            and node.get("target") == {"entity_id": "lock.front_of_house_front_door"}
+                            and isinstance(node.get("confirmation"), dict)
+                            and bool(str(node["confirmation"].get("text", "")).strip())
+                            and node.get("data") in (None, {})
+                        )
+                        if not allowed:
+                            raise BridgeError("Unlock requires confirmation and the exact front-door entity")
                 walk(value)
         elif isinstance(node, list):
             for value in node:
