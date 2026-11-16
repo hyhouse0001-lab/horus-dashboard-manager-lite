@@ -96,6 +96,12 @@ class ScopeTests(unittest.TestCase):
             self.assertNotIn('action="/', markup)
 
 
+    def test_sidebar_uses_short_name_and_panel_title(self):
+        manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
+        self.assertIn("name: Horus DBM\\n", manifest)
+        self.assertIn("panel_title: Horus DBM\\n", manifest)
+        self.assertIn("version: 0.2.10\\n", manifest)
+
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
         test = manager.action_link("test", "Test")
