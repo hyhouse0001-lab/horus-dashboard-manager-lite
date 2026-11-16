@@ -1,0 +1,7 @@
+configuration:
+  github_token:
+    name: Private GitHub access token
+    description: >-
+      Fine-grained token for hyhouse0001-lab/horus-home-os only,
+      with Contents read and write permission. This is required
+      for no-copy-paste dashboard synchronization. Never send it in chat.
