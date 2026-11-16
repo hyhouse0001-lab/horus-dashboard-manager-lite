@@ -89,6 +89,20 @@ def check_config(config, restoring=False):
                         )
                         if not allowed:
                             raise BridgeError("Unlock requires confirmation and the exact front-door entity")
+                    if value == "climate.set_hvac_mode":
+                        entity_id = node.get("target", {}).get("entity_id")
+                        allowed_hvac = (
+                            {"heat", "off"} if entity_id == NEST else
+                            {"cool", "off"} if entity_id in AC_UNITS.values() else set()
+                        )
+                        if not (
+                            key == "perform_action"
+                            and node.get("action") == "perform-action"
+                            and node.get("data") in (
+                                {"hvac_mode": mode} for mode in allowed_hvac
+                            )
+                        ):
+                            raise BridgeError("HVAC on/off action is not allowed for this device or mode")
                 walk(value)
         elif isinstance(node, list):
             for value in node:
