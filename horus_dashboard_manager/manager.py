@@ -728,7 +728,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.10"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.11"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -758,21 +758,17 @@ class Handler(BaseHTTPRequestHandler):
                             'then restart the add-on.</p></div>')
                 content += '<div class="actions">' + action_link("test", "Test connection") + '</div>'
             else:
-                content += ('<div class="module"><h2>Dashboard Controls</h2><div class="actions">'
+                can_restore = bool(state.get("backup") and not state.get("rolled_back"))
+                restore = (
+                    form_button("/rollback", "Restore previous dashboard", danger=True)
+                    if can_restore else
+                    '<button type="button" class="danger" disabled>Restore previous dashboard</button>'
+                )
+                content += ('<div class="actions">'
                             + form_button("/sync", "Sync dashboard to GitHub")
                             + action_link("preview", "Preview proposed update")
                             + action_link("test", "Test connection", secondary=True)
-                            + '</div></div>')
-                content += ('<div class="module"><h2>Family Controls</h2>'
-                            '<p class="muted">Create or verify the Heru, basement humidity, Nest and Frigidaire AC controls. '
-                            'No device action occurs until a dashboard button is pressed.</p>'
-                            '<div class="actions">'
-                            + form_button("/setup-household", "Install / Update Family Controls")
-                            + '</div></div>')
-                if state.get("backup") and not state.get("rolled_back"):
-                    content += ('<div class="module"><h2>Recovery</h2><div class="actions">'
-                                + form_button("/rollback", "Restore previous dashboard", danger=True)
-                                + '</div></div>')
+                            + restore + '</div>')
             content += ('<p class="muted">Only Fuller Family Test can be changed. '
                         'A proposal requires your approval before saving.</p>')
             self.show(200, "Dashboard Manager", content)
