@@ -1,13 +1,10 @@
-# HORUS Dashboard Manager Lite — installation status
+# Install HORUS Dashboard Manager Lite v0.1.0
 
-This is the **public distribution repository**, separate from the private HORUS HOME OS engineering repository.
+This is a **read-only diagnostic preview**, not the dashboard installer. It does not change any Home Assistant dashboard, device, or automation. It contains no private dashboard YAML.
 
-**Not installable yet:** the add-on runtime is held back pending security review and hardware validation. Do not attempt to install from this repository until a signed-off release is published.
-
-## Intended installation
-1. In Home Assistant: Settings → Add-ons → Add-on Store → menu → Repositories.
+1. Home Assistant → Settings → Add-ons → Add-on Store → ⋮ → Repositories.
 2. Add `https://github.com/hyhouse0001-lab/horus-dashboard-manager-lite`.
-3. After a reviewed release adds the add-on package, reload the store and install HORUS Dashboard Manager Lite.
-4. Confirm the existing storage-mode `fuller-family-test` dashboard and create a backup before the first update.
+3. Refresh the store if needed, select **HORUS Dashboard Manager Lite**, and install.
+4. Start the add-on and open its web UI. The landing page returns diagnostic JSON.
 
-The installer must not include any household YAML, entity IDs, credentials, or backups. Deployment to Home Assistant Green has **not** occurred.
+**Not yet validated on Home Assistant Green hardware.** The add-on may fail to build or its Supervisor WebSocket read calls may return HTTP 503. If that happens, capture the add-on logs for diagnosis. Dashboard write and rollback functionality remain blocked pending security review.
