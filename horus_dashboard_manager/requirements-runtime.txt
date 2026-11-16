@@ -1,0 +1,5 @@
+# Python 3.12 musllinux wheels; SHA256 verified from GitHub Actions provenance run 43788223496.
+# aarch64 and x86_64 platform wheels; pip selects the matching compatible artifact.
+websockets==15.0.1 \
+    --hash=sha256:d5f6b181bb38171a8ad1d6aa58a67a6aa9d4b38d0f8c5f496b9e42561dfc62fe \
+    --hash=sha256:3be571a8b5afed347da347bfcf27ba12b069d9d7f42cb8c7028b5e98bbb12597
