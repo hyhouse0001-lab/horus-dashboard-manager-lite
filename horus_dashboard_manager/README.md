@@ -1,13 +1,16 @@
-# HORUS Dashboard Manager Lite — diagnostic preview v0.1.0
+# HORUS Dashboard Manager Lite v0.2.0
 
-**READ-ONLY.** This installable Home Assistant add-on lets an administrator test Supervisor ingress and read access to the storage-mode `fuller-family-test` dashboard. It cannot install or change dashboards. No private household dashboard YAML is included.
+**One dashboard, no copy/paste.** This Home Assistant add-on reads and edits only `fuller-family-test`, using the Home Assistant Core WebSocket API with Supervisor authentication.
 
-## Install
-Add repository URL `https://github.com/hyhouse0001-lab/horus-dashboard-manager-lite` in Home Assistant Add-on Store → Repositories. Install HORUS Dashboard Manager Lite, start it, then open its ingress panel.
+## Safeguards
+- The Home Assistant WebSocket command allowlist contains only `lovelace/config` and `lovelace/config/save` for the exact `fuller-family-test` URL path.
+- The add-on is reachable via Home Assistant admin-only ingress; no host ports are published.
+- Live dashboard configuration and changes are synchronized through the **private** `hyhouse0001-lab/horus-home-os` GitHub repository.
+- GitHub credential is stored only in the add-on's password-type configuration and read from `/data/options.json`. Do not disclose credentials.
+- Every proposed change requires an owner click in the add-on Web UI. There is no automatic remote push/deploy endpoint.
+- The live configuration hash must match the original synchronized snapshot before an apply is allowed.
+- A copy of the previous config is saved on the add-on's persistent `/data` volume before writing. Save is verified and rollback is available.
+- The editor blocks new direct `lock.unlock` and `alarm_control_panel.alarm_disarm` card shortcuts until separately reviewed.
+- This add-on does not execute GitHub code, shell scripts, or Home Assistant device actions.
 
-## Diagnostic endpoints
-- `/` or `/health`: add-on status
-- `/dashboards`: dashboard inventory
-- `/dashboard/fuller-family-test`: read test dashboard
-
-The initial ingress page is JSON, not a graphical installer. The Supervisor WebSocket authentication path and ingress source IP have **not** been validated on actual Home Assistant Green hardware. If dashboard reads return 503, report the error; do not attempt dashboard writes. This preview intentionally does not contain `lite.py`, any write command, or rollback.
+For setup, see [INSTALLATION.md](../INSTALLATION.md). The public repository contains source code only, not the household dashboard.
