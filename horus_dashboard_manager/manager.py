@@ -380,6 +380,7 @@ def page(title, content):
     flex:0 0 auto;background:#70e8ee;box-shadow:0 0 12px #70e8ee55}
     .danger:before{background:#ff8c9c;box-shadow:0 0 12px #f7889a55}
     button:disabled{opacity:.48;cursor:not-allowed}.module input{color:inherit}
+    details{margin:17px 0;border:1px solid #47617d;border-radius:12px;background:#101d30}summary{padding:16px 18px;cursor:pointer;color:#8de3ed;font-weight:700}details[open] summary{border-bottom:1px solid #385672}details pre{margin:12px}
     pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:55vh;overflow:auto;
     font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#071322;
     color:#cbe7fb;border:1px solid #42607a;padding:17px;border-radius:12px}
@@ -441,16 +442,22 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.0"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.3"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
                 current = read_dashboard()
-                info = {"status": "connected", "dashboard": "Fuller Family Test",
-                        "views": len(current["views"]), "mode": "approval-required"}
-                self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
+                content = ('<div class="module good"><span class="status">CONNECTED</span>'
+                           '<p><strong>FULLER FAMILY TEST</strong></p>'
+                           '<p>' + str(len(current["views"])) + ' views available</p></div>'
+                           '<div class="actions">' + action_link("./", "Dashboard Manager",
+                           secondary=True) + '</div>')
+                self.show(200, "Connection Test", content)
             except Exception as exc:
-                self.show(503, "Connection failed", "<p>" + html.escape(str(exc)) + "</p>")
+                content = ('<div class="module alert"><span class="status">CONNECTION FAILED</span>'
+                           '<p>' + html.escape(str(exc)) + '</p></div><div class="actions">'
+                           + action_link("./", "Dashboard Manager", secondary=True) + '</div>')
+                self.show(503, "Connection Test", content)
         elif url.path == "/":
             try:
                 enabled = bool(github_token())
@@ -495,8 +502,8 @@ class Handler(BaseHTTPRequestHandler):
                     content = ('<p><strong>Change:</strong> ' + html.escape(proposed["summary"]) + '</p>'
                                '<p>Current views: ' + str(len(live["views"])) +
                                ' | Proposed views: ' + str(len(proposed["config"]["views"])) + '</p>'
-                               '<h2>Review Changes</h2><pre>' +
-                               html.escape(display_diff) + '</pre>' +
+                               '<details><summary>Inspect exact configuration changes</summary><pre>' +
+                               html.escape(display_diff) + '</pre></details>' +
                                '<div class="actions">' + form_button("/apply", "Approve & Apply", extra) + '</div>' +
                                '<div class="actions">' + action_link("./", "Cancel", secondary=True) + '</div>')
                     self.show(200, "Review Fuller Family Test update", content)
