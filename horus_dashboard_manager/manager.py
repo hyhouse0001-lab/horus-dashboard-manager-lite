@@ -453,6 +453,170 @@ def preset_scripts():
                     "climate.set_temperature", entity, {"temperature": template}
                 )],
             }
+    presets.update({
+    "horus_watch_netflix": {
+        "alias": "HORUS - Watch Netflix",
+        "mode": "restart",
+        "sequence": [
+            {
+                "if": [
+                    {
+                        "condition": "state",
+                        "entity_id": "media_player.living_room_the_tv_in_the_living_room_3",
+                        "state": "off"
+                    }
+                ],
+                "then": [
+                    {
+                        "action": "media_player.turn_on",
+                        "target": {
+                            "entity_id": "media_player.living_room_the_tv_in_the_living_room_3"
+                        }
+                    }
+                ]
+            },
+            {
+                "if": [
+                    {
+                        "condition": "state",
+                        "entity_id": "media_player.living_room_the_tv_in_the_living_room",
+                        "state": "off"
+                    }
+                ],
+                "then": [
+                    {
+                        "action": "remote.turn_on",
+                        "target": {
+                            "entity_id": "remote.living_room_the_tv_in_the_living_room"
+                        }
+                    }
+                ]
+            },
+            {
+                "wait_template": "{{ states('media_player.living_room_the_tv_in_the_living_room') not in ['off','unavailable','unknown'] and 'Netflix' in (state_attr('media_player.living_room_the_tv_in_the_living_room', 'source_list') or []) }}",
+                "timeout": "00:00:30",
+                "continue_on_timeout": False
+            },
+            {
+                "action": "media_player.select_source",
+                "target": {
+                    "entity_id": "media_player.living_room_the_tv_in_the_living_room"
+                },
+                "data": {
+                    "source": "Netflix"
+                }
+            }
+        ]
+    },
+    "horus_watch_prime": {
+        "alias": "HORUS - Watch Prime Video",
+        "mode": "restart",
+        "sequence": [
+            {
+                "if": [
+                    {
+                        "condition": "state",
+                        "entity_id": "media_player.living_room_the_tv_in_the_living_room_3",
+                        "state": "off"
+                    }
+                ],
+                "then": [
+                    {
+                        "action": "media_player.turn_on",
+                        "target": {
+                            "entity_id": "media_player.living_room_the_tv_in_the_living_room_3"
+                        }
+                    }
+                ]
+            },
+            {
+                "if": [
+                    {
+                        "condition": "state",
+                        "entity_id": "media_player.living_room_the_tv_in_the_living_room",
+                        "state": "off"
+                    }
+                ],
+                "then": [
+                    {
+                        "action": "remote.turn_on",
+                        "target": {
+                            "entity_id": "remote.living_room_the_tv_in_the_living_room"
+                        }
+                    }
+                ]
+            },
+            {
+                "wait_template": "{{ states('media_player.living_room_the_tv_in_the_living_room') not in ['off','unavailable','unknown'] and 'Prime Video' in (state_attr('media_player.living_room_the_tv_in_the_living_room', 'source_list') or []) }}",
+                "timeout": "00:00:30",
+                "continue_on_timeout": False
+            },
+            {
+                "action": "media_player.select_source",
+                "target": {
+                    "entity_id": "media_player.living_room_the_tv_in_the_living_room"
+                },
+                "data": {
+                    "source": "Prime Video"
+                }
+            }
+        ]
+    },
+    "horus_watch_hbo": {
+        "alias": "HORUS - Watch HBO Max",
+        "mode": "restart",
+        "sequence": [
+            {
+                "if": [
+                    {
+                        "condition": "state",
+                        "entity_id": "media_player.living_room_the_tv_in_the_living_room_3",
+                        "state": "off"
+                    }
+                ],
+                "then": [
+                    {
+                        "action": "media_player.turn_on",
+                        "target": {
+                            "entity_id": "media_player.living_room_the_tv_in_the_living_room_3"
+                        }
+                    }
+                ]
+            },
+            {
+                "if": [
+                    {
+                        "condition": "state",
+                        "entity_id": "media_player.living_room_the_tv_in_the_living_room",
+                        "state": "off"
+                    }
+                ],
+                "then": [
+                    {
+                        "action": "remote.turn_on",
+                        "target": {
+                            "entity_id": "remote.living_room_the_tv_in_the_living_room"
+                        }
+                    }
+                ]
+            },
+            {
+                "wait_template": "{{ states('media_player.living_room_the_tv_in_the_living_room') not in ['off','unavailable','unknown'] and 'HBO Max' in (state_attr('media_player.living_room_the_tv_in_the_living_room', 'source_list') or []) }}",
+                "timeout": "00:00:30",
+                "continue_on_timeout": False
+            },
+            {
+                "action": "media_player.select_source",
+                "target": {
+                    "entity_id": "media_player.living_room_the_tv_in_the_living_room"
+                },
+                "data": {
+                    "source": "HBO Max"
+                }
+            }
+        ]
+    }
+})
     return presets
 
 
@@ -728,7 +892,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.11"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.12"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:

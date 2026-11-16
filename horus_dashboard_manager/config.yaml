@@ -1,5 +1,5 @@
 name: Horus DBM
-version: 0.2.11
+version: 0.2.12
 slug: horus_dashboard_manager
 description: Approval-gated GitHub sync and rollback for Fuller Family Test only
 url: https://github.com/hyhouse0001-lab/horus-dashboard-manager-lite

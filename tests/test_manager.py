@@ -100,7 +100,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.2.11", manifest)
+        self.assertIn("version: 0.2.12", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -193,11 +193,21 @@ class DeploymentTests(unittest.TestCase):
 class FamilyControlsTests(unittest.TestCase):
     def test_presets_only_touch_selected_entities(self):
         p = manager.preset_scripts()
-        self.assertEqual(len(p), 16)
+        self.assertEqual(len(p), 19)
         self.assertEqual(p["horus_heru_sleep"]["sequence"][0]["data"]["volume_level"], 0.1)
         self.assertEqual(p["horus_heru_awake"]["sequence"][0]["data"]["volume_level"], 0.7)
-        touched = {action["target"]["entity_id"] for cfg in p.values()
-                   for action in cfg["sequence"]}
+        def collect_targets(node):
+            if isinstance(node, dict):
+                targets = set()
+                if "target" in node:
+                    targets.add(node["target"]["entity_id"])
+                for value in node.values():
+                    targets.update(collect_targets(value))
+                return targets
+            if isinstance(node, list):
+                return set().union(*(collect_targets(value) for value in node))
+            return set()
+        touched = collect_targets(p)
         self.assertEqual(touched, {"media_player.bedroom_master_bdrm_spot",
                                    "input_boolean.horus_heru_sleeping",
                                    "humidifier.basement_dehumidifier",
@@ -206,7 +216,10 @@ class FamilyControlsTests(unittest.TestCase):
                                    "climate.bedroom_my_bedroom_ac",
                                    "climate.dining_room_dining_room_ac",
                                    "climate.herus_room_herus_ac",
-                                   "climate.guest_bedroom_guest_room_ac"})
+                                   "climate.guest_bedroom_guest_room_ac",
+                                   "media_player.living_room_the_tv_in_the_living_room",
+                                   "media_player.living_room_the_tv_in_the_living_room_3",
+                                   "remote.living_room_the_tv_in_the_living_room"})
         self.assertIn(" | min | int", p["horus_nest_temp_up"]["sequence"][0]["data"]["temperature"])
         self.assertIn(" | max | int", p["horus_nest_temp_down"]["sequence"][0]["data"]["temperature"])
         self.assertEqual(p["horus_nest_temp_up"]["sequence"][0]["action"], "climate.set_temperature")
