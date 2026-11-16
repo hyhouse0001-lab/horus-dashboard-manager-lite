@@ -407,7 +407,23 @@ def preset_scripts():
             "sequence": [
                 step("humidifier.set_humidity", HUMIDIFIER, {
                     "humidity": "{{ [35, ((state_attr('humidifier.basement_dehumidifier','humidity') | float(45)) - 5)] | max | int }}"
+                    "horus_nest_temp_up": {
+            "alias": "HORUS - Nest Increase Temperature", "mode": "single",
+            "sequence": [
+                step("climate.set_temperature", "climate.nest_learning_thermostat_4th_gen", {
+                    "temperature": "{{ [90, ((state_attr('climate.nest_learning_thermostat_4th_gen', 'temperature') | float(74)) + 1)] | min | int }}"
                 }),
+            ],
+        },
+        "horus_nest_temp_down": {
+            "alias": "HORUS - Nest Decrease Temperature", "mode": "single",
+            "sequence": [
+                step("climate.set_temperature", "climate.nest_learning_thermostat_4th_gen", {
+                    "temperature": "{{ [50, ((state_attr('climate.nest_learning_thermostat_4th_gen', 'temperature') | float(74)) - 1)] | max | int }}"
+                }),
+            ],
+        },
+    }),
             ],
         },
     }
@@ -492,7 +508,7 @@ def install_family_controls():
                 raise BridgeError("Existing script conflicts with " + key)
             continue
         script_request(key, "POST", preset)
-    return 4
+    return len(preset_scripts())
 
 
 def review_representation(config):
@@ -637,7 +653,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.7"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.8"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -673,10 +689,10 @@ class Handler(BaseHTTPRequestHandler):
                             + action_link("test", "Test connection", secondary=True)
                             + '</div></div>')
                 content += ('<div class="module"><h2>Family Controls</h2>'
-                            '<p class="muted">One-time install for Heru sleeping and basement humidity buttons. '
+                            '<p class="muted">Create or verify the Heru, basement humidity, and Nest temperature controls. '
                             'No device action occurs until a dashboard button is pressed.</p>'
                             '<div class="actions">'
-                            + form_button("/setup-household", "Install Family Controls")
+                            + form_button("/setup-household", "Install / Update Family Controls")
                             + '</div></div>')
                 if state.get("backup") and not state.get("rolled_back"):
                     content += ('<div class="module"><h2>Recovery</h2><div class="actions">'
