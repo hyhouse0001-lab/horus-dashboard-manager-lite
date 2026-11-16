@@ -24,20 +24,20 @@ def ha_call(command, **args):
         raise ValueError("Only approved test dashboard may be read")
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
-        raise RuntimeError("Supervisor authorization unavailable")
+        raise RuntimeError("supervisor_token_missing")
     from websockets.sync.client import connect
     endpoint = "ws://supervisor/core/websocket"
     with connect(endpoint, open_timeout=5, close_timeout=2, max_size=MAX_RESPONSE) as ws:
         hello = json.loads(ws.recv(timeout=5))
         if hello.get("type") != "auth_required":
-            raise RuntimeError("Unexpected Home Assistant authentication challenge")
+            raise RuntimeError("unexpected_auth_challenge")
         ws.send(json.dumps({"type": "auth", "access_token": token}))
         if json.loads(ws.recv(timeout=5)).get("type") != "auth_ok":
-            raise RuntimeError("Home Assistant authentication failed")
+            raise RuntimeError("auth_rejected")
         ws.send(json.dumps({"id": 1, "type": command, **args}))
         result = json.loads(ws.recv(timeout=10))
         if result.get("type") != "result" or result.get("id") != 1 or not result.get("success"):
-            raise RuntimeError("Home Assistant dashboard read unavailable")
+            raise RuntimeError("dashboard_read_rejected")
         return result.get("result")
 
 
@@ -107,7 +107,7 @@ padding:1rem;border-radius:9px;text-decoration:none;font-weight:700}</style></he
                 self._reply(200, {"status": "connected", "dashboard": "Fuller Family Test", "views": len(result["views"]), "mode": "read-only"})
             except Exception as exc:
                 logging.error("Dashboard connection test failed: %s: %s", type(exc).__name__, str(exc)[:160])
-                self._reply(503, {"status": "failed", "dashboard": "Fuller Family Test", "reason": type(exc).__name__, "mode": "read-only"})
+                self._reply(503, {"status": "failed", "dashboard": "Fuller Family Test", "reason": (str(exc) if isinstance(exc, RuntimeError) and str(exc) in ("supervisor_token_missing", "unexpected_auth_challenge", "auth_rejected", "dashboard_read_rejected") else "connection_or_response_error"), "diagnostics": {"supervisor_token_present": bool(os.environ.get("SUPERVISOR_TOKEN")), "hassio_token_present": bool(os.environ.get("HASSIO_TOKEN"))}, "mode": "read-only"})
         elif path.path == "/dashboards":
             try:
                 self._reply(200, {"dashboards": list_dashboards()})
