@@ -187,7 +187,7 @@ class DeploymentTests(unittest.TestCase):
 class FamilyControlsTests(unittest.TestCase):
     def test_presets_only_touch_selected_entities(self):
         p = manager.preset_scripts()
-        self.assertEqual(len(p), 6)
+        self.assertEqual(len(p), 16)
         self.assertEqual(p["horus_heru_sleep"]["sequence"][0]["data"]["volume_level"], 0.1)
         self.assertEqual(p["horus_heru_awake"]["sequence"][0]["data"]["volume_level"], 0.7)
         touched = {action["target"]["entity_id"] for cfg in p.values()
@@ -195,7 +195,12 @@ class FamilyControlsTests(unittest.TestCase):
         self.assertEqual(touched, {"media_player.bedroom_master_bdrm_spot",
                                    "input_boolean.horus_heru_sleeping",
                                    "humidifier.basement_dehumidifier",
-                                   "climate.nest_learning_thermostat_4th_gen"})
+                                   "climate.nest_learning_thermostat_4th_gen",
+                                   "climate.living_room_living_room_ac",
+                                   "climate.bedroom_my_bedroom_ac",
+                                   "climate.dining_room_dining_room_ac",
+                                   "climate.herus_room_herus_ac",
+                                   "climate.guest_bedroom_guest_room_ac"})
         self.assertIn(" | min | int", p["horus_nest_temp_up"]["sequence"][0]["data"]["temperature"])
         self.assertIn(" | max | int", p["horus_nest_temp_down"]["sequence"][0]["data"]["temperature"])
         self.assertEqual(p["horus_nest_temp_up"]["sequence"][0]["action"], "climate.set_temperature")
@@ -269,6 +274,68 @@ class PreviewDiffTests(unittest.TestCase):
         self.assertIn("HOME", compact)
         self.assertNotEqual(manager.review_representation(before),
                             manager.review_representation(after))
+
+
+class ACControlsTests(unittest.TestCase):
+    def test_each_frigidaire_unit_has_two_bounded_scripts(self):
+        presets = manager.preset_scripts()
+        for room, entity in manager.AC_UNITS.items():
+            for direction in ("up", "down"):
+                name = "horus_ac_" + room + "_" + direction
+                self.assertIn(name, presets)
+                script = presets[name]
+                self.assertEqual(script["sequence"][0]["action"], "climate.set_temperature")
+                self.assertEqual(script["sequence"][0]["target"], {"entity_id": entity})
+                expr = script["sequence"][0]["data"]["temperature"]
+                self.assertIn(" | max] | min | int }}", expr)
+                self.assertIn("state_attr('" + entity + "', 'temperature')", expr)
+                self.assertIn("+ 1" if direction == "up" else "- 1", expr)
+
+    def test_missing_nest_scripts_are_reported_as_setup_prerequisite(self):
+        config = {"views": [{"cards": [
+            {"tap_action": {"perform_action": "script.turn_on",
+                            "target": {"entity_id": "script.horus_nest_temp_up"}}}]}]}
+        with patch.object(manager, "script_request", return_value=None):
+            with self.assertRaises(manager.MissingControls) as ctx:
+                manager.validate_required_controls(config)
+        self.assertIn("horus_nest_temp_up", str(ctx.exception))
+
+    def test_only_referenced_scripts_are_checked(self):
+        config = {"views": [{"cards": [
+            {"tap_action": {"perform_action": "script.turn_on",
+                            "target": {"entity_id": "script.horus_nest_temp_up"}}}]}]}
+        preset = manager.preset_scripts()["horus_nest_temp_up"]
+        with patch.object(manager, "script_request", return_value=preset) as request:
+            manager.validate_required_controls(config)
+        request.assert_called_once_with("horus_nest_temp_up")
+
+    def test_unknown_horus_script_rejected(self):
+        config = {"views":[{"cards":[{"tap_action":{
+            "perform_action":"script.turn_on",
+            "target":{"entity_id":"script.horus_unrelated"} }}]}]}
+        with self.assertRaises(manager.BridgeError):
+            manager.required_preset_ids(config)
+
+    def test_air_conditioner_can_only_use_cool_off_on_approved_entities(self):
+        for entity in manager.AC_UNITS.values():
+            for mode in ("cool", "off"):
+                action={"action":"perform-action","perform_action":"climate.set_hvac_mode",
+                        "target":{"entity_id":entity},"data":{"hvac_mode":mode}}
+                manager.check_config({"views":[{"cards":[{"tap_action":action}]}]})
+            for mode in ("heat","dry"):
+                bad={"action":"perform-action","perform_action":"climate.set_hvac_mode",
+                     "target":{"entity_id":entity},"data":{"hvac_mode":mode}}
+                with self.assertRaises(manager.BridgeError):
+                    manager.check_config({"views":[{"cards":[{"tap_action":bad}]}]})
+
+    def test_hvac_other_targets_disallowed_and_nest_heat_preserved(self):
+        nest={"action":"perform-action","perform_action":"climate.set_hvac_mode",
+              "target":{"entity_id":manager.NEST},"data":{"hvac_mode":"heat"}}
+        manager.check_config({"views":[{"cards":[{"tap_action":nest}]}]})
+        unknown={**nest,"target":{"entity_id":"climate.some_other_device"}}
+        with self.assertRaises(manager.BridgeError):
+            manager.check_config({"views":[{"cards":[{"tap_action":unknown}]}]})
+
 
 
 if __name__ == "__main__":
