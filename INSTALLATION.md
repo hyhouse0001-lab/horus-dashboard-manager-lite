@@ -1,11 +1,11 @@
-# HORUS Dashboard Manager Lite v0.2.3 — no dashboard code to paste
+# HORUS Dashboard Manager Lite v0.2.4 — no dashboard code to paste
 
 **Scope:** A single existing storage-mode dashboard, `fuller-family-test`. Other dashboards, devices, automations, and Home Assistant settings are not deployment targets.
 
 ## Update the existing add-on
 
 1. In Home Assistant, open Terminal & SSH and run `ha store reload` (only if the newest version is not visible).
-2. Go to Settings → Apps → HORUS Dashboard Manager Lite, and update to **v0.2.3**.
+2. Go to Settings → Apps → HORUS Dashboard Manager Lite, and update to **v0.2.4**.
 3. Restart the add-on and open its Web UI. Test Home Assistant connection first.
 
 ## One-time private GitHub authorization
@@ -29,3 +29,11 @@ This is a one-time credential setup, not copying or pasting YAML, JSON, or Pytho
 The GitHub access token may need renewal when it expires. The code does not show or log the token. Never store private dashboard snapshots in the public add-on repository.
 
 **Validation status:** Static Python compilation and automated tests pass in GitHub Actions. On-device GitHub authentication, write, verification, and rollback require a first controlled deployment test before the flow is considered production-verified. No write occurs without the owner's confirmation.
+
+## HORUS Update Watcher (optional)
+Install **HORUS Update Watcher** from the same repository, then enable Start on boot and Watchdog. It requires the Home Assistant Supervisor manager role, which is broad; its code has a hardcoded Dashboard Manager-only update target. GitHub is checked every 15 seconds. The app itself does not require a separate GitHub token.
+
+## Heru and humidity controls
+After updating HORUS Dashboard Manager to **v0.2.4**, open the manager and tap **Install Family Controls** once. This creates a dedicated `input_boolean.horus_heru_sleeping` helper and four presets:
+`script.horus_heru_sleep`, `script.horus_heru_awake`, `script.horus_basement_humidity_up`, and `script.horus_basement_humidity_down`.
+Sleep/awake taps change the Master Bedroom Spot to volume 0.1/0.7. The Samsung TV action is separate and asks for confirmation. No other scripts or automations are created.
