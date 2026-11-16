@@ -57,8 +57,22 @@ def check_config(config, restoring=False):
         if isinstance(node, dict):
             for key, value in node.items():
                 if not restoring and key in ("service", "perform_action") and isinstance(value, str):
-                    if value == "alarm_control_panel.alarm_disarm":
-                        raise BridgeError("Alarm disarm shortcuts are not allowed")
+                    if value in ("alarm_control_panel.alarm_disarm",
+                                 "alarm_control_panel.alarm_arm_home",
+                                 "alarm_control_panel.alarm_arm_away"):
+                        allowed_ring = (
+                            key == "perform_action"
+                            and node.get("action") == "perform-action"
+                            and node.get("target") == {"entity_id": "alarm_control_panel.home_alarm"}
+                            and node.get("data") in (None, {})
+                        )
+                        if value == "alarm_control_panel.alarm_disarm":
+                            allowed_ring = allowed_ring and (
+                                isinstance(node.get("confirmation"), dict)
+                                and bool(str(node["confirmation"].get("text", "")).strip())
+                            )
+                        if not allowed_ring:
+                            raise BridgeError("Ring alarm action requires the exact MQTT alarm entity; disarm requires confirmation")
                     if value == "lock.unlock":
                         allowed = (
                             key == "perform_action"
