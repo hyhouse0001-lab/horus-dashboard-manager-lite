@@ -1,5 +1,5 @@
 name: HORUS Dashboard Manager Lite
-version: 0.1.4
+version: 0.1.5
 slug: horus_dashboard_manager
 description: Read-only diagnostic for Fuller Family Test dashboard
 url: https://github.com/hyhouse0001-lab/horus-dashboard-manager-lite
@@ -9,7 +9,6 @@ startup: application
 boot: manual
 init: false
 homeassistant_api: true
-hassio_api: true
 ingress: true
 panel_admin: true
 ingress_port: 8099
