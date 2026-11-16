@@ -28,6 +28,35 @@ class ScopeTests(unittest.TestCase):
         with self.assertRaises(manager.BridgeError):
             manager.check_config({"title":"Missing views"})
 
+    def test_confirmed_exact_front_door_unlock_is_allowed(self):
+        action = {
+            "action": "perform-action",
+            "perform_action": "lock.unlock",
+            "target": {"entity_id": "lock.front_of_house_front_door"},
+            "confirmation": {"text": "Unlock the front door?"}
+        }
+        config = {"views": [{"title": "Home", "cards": [{"type": "button", "tap_action": action}]}]}
+        self.assertEqual(manager.check_config(config), config)
+
+    def test_unlock_without_confirmation_rejected(self):
+        action = {
+            "action": "perform-action",
+            "perform_action": "lock.unlock",
+            "target": {"entity_id": "lock.front_of_house_front_door"},
+        }
+        with self.assertRaises(manager.BridgeError):
+            manager.check_config({"views": [{"cards": [{"tap_action": action}]}]})
+
+    def test_unlock_of_any_other_lock_rejected(self):
+        action = {
+            "action": "perform-action",
+            "perform_action": "lock.unlock",
+            "target": {"entity_id": "lock.other_door"},
+            "confirmation": {"text": "Unlock?"}
+        }
+        with self.assertRaises(manager.BridgeError):
+            manager.check_config({"views": [{"cards": [{"tap_action": action}]}]})
+
     def test_direct_lock_unlock_shortcut_rejected(self):
         config = {"views":[{"cards":[{"tap_action":{"action":"call-service","service":"lock.unlock"}}]}]}
         with self.assertRaises(manager.BridgeError):
