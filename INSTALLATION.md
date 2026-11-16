@@ -1,11 +1,11 @@
-# HORUS Dashboard Manager Lite v0.2.0 — no dashboard code to paste
+# HORUS Dashboard Manager Lite v0.2.3 — no dashboard code to paste
 
 **Scope:** A single existing storage-mode dashboard, `fuller-family-test`. Other dashboards, devices, automations, and Home Assistant settings are not deployment targets.
 
 ## Update the existing add-on
 
 1. In Home Assistant, open Terminal & SSH and run `ha store reload` (only if the newest version is not visible).
-2. Go to Settings → Apps → HORUS Dashboard Manager Lite, and update to **v0.2.0**.
+2. Go to Settings → Apps → HORUS Dashboard Manager Lite, and update to **v0.2.3**.
 3. Restart the add-on and open its Web UI. Test Home Assistant connection first.
 
 ## One-time private GitHub authorization
