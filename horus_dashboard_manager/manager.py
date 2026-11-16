@@ -219,6 +219,21 @@ def load_proposal():
     if not isinstance(summary, str) or not (1 <= len(summary) <= 500):
         raise BridgeError("Proposal requires a short change summary")
     check_config(document.get("config"))
+    if "script.horus_heru_sleep" in canonical(document["config"]):
+        # Confirm that the separate owner-approved household setup exists.
+        entries = helper_command("input_boolean/list")
+        items = entries if isinstance(entries, list) else (
+            entries.get("items", []) if isinstance(entries, dict) else []
+        )
+        if not any(isinstance(row, dict) and row.get("id") == "horus_heru_sleeping"
+                   for row in items):
+            raise BridgeError("Open Dashboard Manager and select Install Family Controls first")
+        for script_id, expected in preset_scripts().items():
+            current = script_request(script_id)
+            config = current.get("config", current) if isinstance(current, dict) else {}
+            if any(config.get(field) != expected[field]
+                   for field in ("alias", "sequence", "mode")):
+                raise BridgeError("Family control script not ready: " + script_id)
     return document, sha
 
 
