@@ -340,7 +340,7 @@ def page(title, content):
 
 
 def form_button(action, label, extra="", danger=False):
-    return ('<form action="' + html.escape(action, quote=True) + '" method="post">'
+    return ('<form action="' + html.escape(action.lstrip("/"), quote=True) + '" method="post">'
             '<input type="hidden" name="csrf" value="' + html.escape(CSRF, quote=True) + '">'
             + extra + '<button class="' + ("danger" if danger else "") +
             '" type="submit">' + html.escape(label) + '</button></form>')
