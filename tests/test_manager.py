@@ -59,6 +59,13 @@ class ScopeTests(unittest.TestCase):
         proposal = {"base_sha256":manager.digest(live),"config":{"views":[{"title":"Changed"}]}}
         manager.require_fresh(proposal, live)
 
+
+    def test_form_actions_stay_inside_home_assistant_ingress(self):
+        for action in ("/sync", "/apply", "/rollback"):
+            markup = manager.form_button(action, "Action")
+            self.assertIn('action="' + action.lstrip("/") + '"', markup)
+            self.assertNotIn('action="/', markup)
+
     def test_private_repo_and_paths(self):
         self.assertEqual(manager.PRIVATE_REPO, "hyhouse0001-lab/horus-home-os")
         self.assertEqual(manager.SNAPSHOT_PATH, "dashboard_sync/fuller-family-test.current.json")
