@@ -203,5 +203,35 @@ class FamilyControlsTests(unittest.TestCase):
             manager.helper_command("input_boolean/create", name="Other Helper")
 
 
+class RingAlarmPermissionTests(unittest.TestCase):
+    def check(self, action):
+        manager.check_config({"views":[{"title":"Home","cards":[{"type":"button","tap_action":action}]}]})
+
+    def test_ring_mqtt_disarm_requires_confirmation(self):
+        act={"action":"perform-action","perform_action":"alarm_control_panel.alarm_disarm",
+             "target":{"entity_id":"alarm_control_panel.home_alarm"},"confirmation":{"text":"Disarm Ring?"}}
+        self.check(act)
+        act.pop("confirmation")
+        with self.assertRaises(manager.BridgeError):
+            self.check(act)
+
+    def test_arm_home_and_away_only_ring(self):
+        for name in ("alarm_control_panel.alarm_arm_home","alarm_control_panel.alarm_arm_away"):
+            valid={"action":"perform-action","perform_action":name,
+                   "target":{"entity_id":"alarm_control_panel.home_alarm"}}
+            self.check(valid)
+            valid["target"]={"entity_id":"alarm_control_panel.some_other_alarm"}
+            with self.assertRaises(manager.BridgeError):
+                self.check(valid)
+
+    def test_disarm_cannot_target_other_alarm(self):
+        bad={"action":"perform-action","perform_action":"alarm_control_panel.alarm_disarm",
+             "target":{"entity_id":"alarm_control_panel.blink_home"},
+             "confirmation":{"text":"Disarm?"}}
+        with self.assertRaises(manager.BridgeError):
+            self.check(bad)
+
+
+
 if __name__ == "__main__":
     unittest.main()
