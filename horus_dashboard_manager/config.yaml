@@ -1,5 +1,5 @@
 name: HORUS Dashboard Manager Lite
-version: 0.2.5
+version: 0.2.6
 slug: horus_dashboard_manager
 description: Approval-gated GitHub sync and rollback for Fuller Family Test only
 url: https://github.com/hyhouse0001-lab/horus-dashboard-manager-lite
@@ -12,7 +12,7 @@ homeassistant_api: true
 ingress: true
 panel_admin: true
 ingress_port: 8099
-panel_title: HORUS Dashboard Manager Lite
+panel_title: Horus DBM
 panel_icon: mdi:view-dashboard
 options: {}
 schema:
