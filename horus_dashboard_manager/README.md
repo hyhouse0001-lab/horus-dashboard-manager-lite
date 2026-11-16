@@ -1,4 +1,4 @@
-# HORUS Dashboard Manager Lite v0.2.0
+# HORUS Dashboard Manager Lite v0.2.3
 
 **One dashboard, no copy/paste.** This Home Assistant add-on reads and edits only `fuller-family-test`, using the Home Assistant Core WebSocket API with Supervisor authentication.
 
