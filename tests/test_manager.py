@@ -95,6 +95,24 @@ class ScopeTests(unittest.TestCase):
             self.assertIn('action="' + action.lstrip("/") + '"', markup)
             self.assertNotIn('action="/', markup)
 
+
+    def test_manager_links_are_styled_buttons(self):
+        preview = manager.action_link("preview", "Preview")
+        test = manager.action_link("test", "Test")
+        self.assertIn('class="control primary"', preview)
+        self.assertIn('class="control primary"', test)
+        self.assertIn('href="preview"', preview)
+        self.assertNotIn('href="/preview"', preview)
+        html_content = manager.page("Dashboard Manager", preview).decode("utf-8")
+        self.assertIn("HORUS / FULLER FAMILY", html_content)
+        self.assertIn("radial-gradient", html_content)
+
+    def test_manager_still_rejects_unlisted_navigation(self):
+        with self.assertRaises(ValueError):
+            manager.action_link("https://example.com", "External")
+        with self.assertRaises(ValueError):
+            manager.form_button("/unlock", "Unlock")
+
     def test_private_repo_and_paths(self):
         self.assertEqual(manager.PRIVATE_REPO, "hyhouse0001-lab/horus-home-os")
         self.assertEqual(manager.SNAPSHOT_PATH, "dashboard_sync/fuller-family-test.current.json")
