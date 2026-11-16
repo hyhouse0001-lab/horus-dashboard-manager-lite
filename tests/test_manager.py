@@ -184,5 +184,24 @@ class DeploymentTests(unittest.TestCase):
             manager.check_config(previous)
 
 
+class FamilyControlsTests(unittest.TestCase):
+    def test_presets_only_touch_selected_entities(self):
+        p = manager.preset_scripts()
+        self.assertEqual(len(p), 4)
+        self.assertEqual(p["horus_heru_sleep"]["sequence"][0]["data"]["volume_level"], 0.1)
+        self.assertEqual(p["horus_heru_awake"]["sequence"][0]["data"]["volume_level"], 0.7)
+        touched = {action["target"]["entity_id"] for cfg in p.values()
+                   for action in cfg["sequence"]}
+        self.assertEqual(touched, {"media_player.bedroom_master_bdrm_spot",
+                                   "input_boolean.horus_heru_sleeping",
+                                   "humidifier.basement_dehumidifier"})
+    def test_script_id_restriction(self):
+        with self.assertRaises(manager.BridgeError):
+            manager.script_request("someone_else_script", "POST", {})
+    def test_helper_restriction(self):
+        with self.assertRaises(manager.BridgeError):
+            manager.helper_command("input_boolean/create", name="Other Helper")
+
+
 if __name__ == "__main__":
     unittest.main()
