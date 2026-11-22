@@ -38,6 +38,59 @@ class ScopeTests(unittest.TestCase):
         config = {"views": [{"title": "Home", "cards": [{"type": "button", "tap_action": action}]}]}
         self.assertEqual(manager.check_config(config), config)
 
+    def test_confirmed_exact_back_door_unlock_is_allowed(self):
+        action = {
+            "action": "perform-action",
+            "perform_action": "lock.unlock",
+            "target": {"entity_id": "lock.back_door"},
+            "confirmation": {"text": "Unlock the back door?"}
+        }
+        config = {"views": [{"title": "Security", "cards": [{"type": "button", "tap_action": action}]}]}
+        self.assertEqual(manager.check_config(config), config)
+
+    def test_back_door_unlock_without_confirmation_rejected(self):
+        action = {
+            "action": "perform-action",
+            "perform_action": "lock.unlock",
+            "target": {"entity_id": "lock.back_door"}
+        }
+        with self.assertRaises(manager.BridgeError):
+            manager.check_config({"views": [{"cards": [{"tap_action": action}]}]})
+
+    def test_both_door_unlocks_with_confirmation_allowed(self):
+        actions = [
+            {"action": "perform-action", "perform_action": "lock.unlock",
+             "target": {"entity_id": entity},
+             "confirmation": {"text": "Confirm unlocking this door?"}}
+            for entity in ("lock.front_of_house_front_door", "lock.back_door")
+        ]
+        config = {"views": [{"cards": [{"tap_action": action} for action in actions]}]}
+        self.assertEqual(manager.check_config(config), config)
+
+    def test_other_lock_or_multi_target_unlock_rejected(self):
+        for target in (
+            {"entity_id": "lock.other_door"},
+            {"entity_id": ["lock.front_of_house_front_door", "lock.back_door"]},
+            {"area_id": "house"},
+            {"entity_id": "all"},
+        ):
+            action = {"action": "perform-action", "perform_action": "lock.unlock",
+                      "target": target, "confirmation": {"text": "Confirm unlock?"}}
+            with self.subTest(target=target), self.assertRaises(manager.BridgeError):
+                manager.check_config({"views": [{"cards": [{"tap_action": action}]}]})
+
+    def test_blank_confirmation_and_legacy_service_unlock_rejected(self):
+        for entity in ("lock.front_of_house_front_door", "lock.back_door"):
+            for confirmation in (None, {}, {"text": "   "}):
+                action = {"action": "perform-action", "perform_action": "lock.unlock",
+                          "target": {"entity_id": entity}, "confirmation": confirmation}
+                with self.subTest(entity=entity, confirmation=confirmation), self.assertRaises(manager.BridgeError):
+                    manager.check_config({"views": [{"cards": [{"tap_action": action}]}]})
+            legacy = {"action": "call-service", "service": "lock.unlock",
+                      "target": {"entity_id": entity}, "confirmation": {"text": "Unlock?"}}
+            with self.assertRaises(manager.BridgeError):
+                manager.check_config({"views": [{"cards": [{"tap_action": legacy}]}]})
+
     def test_unlock_without_confirmation_rejected(self):
         action = {
             "action": "perform-action",
@@ -100,7 +153,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.2.12", manifest)
+        self.assertIn("version: 0.2.13", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
