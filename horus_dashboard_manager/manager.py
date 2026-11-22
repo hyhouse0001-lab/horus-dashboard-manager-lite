@@ -629,7 +629,9 @@ def helper_command(command, **args):
         if args:
             raise BridgeError("Invalid helper list")
     elif command == "input_boolean/create":
-        if args != {"name": "HORUS Heru Sleeping", "icon": "mdi:sleep"}:
+        if args not in ({"name": "HORUS Heru Sleeping", "icon": "mdi:sleep"},
+                        {"name": "HORUS Living Room Streaming", "icon": "mdi:television-play"},
+                        {"name": "HORUS Bedroom Streaming", "icon": "mdi:television-play"}):
             raise BridgeError("Unapproved helper create")
     else:
         raise BridgeError("Unapproved helper command")
@@ -692,6 +694,20 @@ def install_family_controls():
                                name="HORUS Heru Sleeping", icon="mdi:sleep")
         if not isinstance(added, dict) or added.get("id") != "horus_heru_sleeping":
             raise BridgeError("Helper ID did not match expected value")
+    # Optional, independently toggled streaming-library sections. Exact IDs only.
+    for helper_id, helper_name in (
+        ("horus_living_room_streaming", "HORUS Living Room Streaming"),
+        ("horus_bedroom_streaming", "HORUS Bedroom Streaming"),
+    ):
+        existing = next((item for item in entries if isinstance(item, dict)
+                         and item.get("id") == helper_id), None)
+        if existing is not None and existing.get("name") != helper_name:
+            raise BridgeError("Existing helper ID belongs to something else: " + helper_id)
+        if existing is None:
+            added = helper_command("input_boolean/create",
+                                   name=helper_name, icon="mdi:television-play")
+            if not isinstance(added, dict) or added.get("id") != helper_id:
+                raise BridgeError("Streaming helper ID did not match expected value")
     for key, preset in preset_scripts().items():
         existing = script_request(key)
         if existing is not None:
@@ -737,6 +753,19 @@ def validate_required_controls(config):
         if not any(isinstance(row, dict) and row.get("id") == "horus_heru_sleeping"
                    for row in items):
             raise MissingControls("Heru sleep helper is not installed")
+    # Streaming menus are hidden unless their exact, separately owned helper exists.
+    helper_ids = {"horus_living_room_streaming", "horus_bedroom_streaming"}
+    serialized = canonical(config)
+    needed = {ident for ident in helper_ids if "input_boolean." + ident in serialized}
+    if needed:
+        rows = helper_command("input_boolean/list")
+        entries = rows if isinstance(rows, list) else (
+            rows.get("items", []) if isinstance(rows, dict) else []
+        )
+        present = {item.get("id") for item in entries if isinstance(item, dict)}
+        if not needed.issubset(present):
+            raise MissingControls("Streaming library helpers need installation: " +
+                                  ", ".join(sorted(needed - present)))
     presets = preset_scripts()
     missing = []
     for script_id in sorted(requested):
