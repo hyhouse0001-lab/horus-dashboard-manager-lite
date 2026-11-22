@@ -91,6 +91,24 @@ class ScopeTests(unittest.TestCase):
             with self.assertRaises(manager.BridgeError):
                 manager.check_config({"views": [{"cards": [{"tap_action": legacy}]}]})
 
+    def test_streaming_helper_create_allowlist(self):
+        for name in ("HORUS Living Room Streaming", "HORUS Bedroom Streaming"):
+            with patch.object(manager.os.environ, "get", return_value=None):
+                with self.assertRaisesRegex(manager.BridgeError, "Supervisor token unavailable"):
+                    manager.helper_command("input_boolean/create", name=name,
+                                           icon="mdi:television-play")
+        with self.assertRaisesRegex(manager.BridgeError, "Unapproved helper create"):
+            manager.helper_command("input_boolean/create", name="Other streaming",
+                                   icon="mdi:television-play")
+
+    def test_missing_streaming_helper_prevents_preview(self):
+        config = {"views": [{"cards": [{"type": "conditional",
+                  "conditions": [{"entity": "input_boolean.horus_bedroom_streaming",
+                                  "state": "on"}]}]}]}
+        with patch.object(manager, "helper_command", return_value=[]):
+            with self.assertRaises(manager.MissingControls):
+                manager.validate_required_controls(config)
+
     def test_unlock_without_confirmation_rejected(self):
         action = {
             "action": "perform-action",
@@ -153,7 +171,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.2.13", manifest)
+        self.assertIn("version: 0.2.14", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
