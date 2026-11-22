@@ -56,8 +56,12 @@ def check_config(config, restoring=False):
         raise BridgeError("Configuration must contain at least one dashboard view")
     if len(canonical(config).encode("utf-8")) > MAX_CONFIG_BYTES:
         raise BridgeError("Dashboard configuration is too large")
-    # Narrow exception for this exact front-door lock, with explicit confirmation.
-    # Never permit an unconfirmed unlock or any alarm disarm shortcut.
+    # Allow confirmed unlocks for exactly the two registered Fuller Family door locks.
+    # Never permit an unconfirmed unlock, arbitrary lock target, or alarm disarm shortcut.
+    allowed_unlock_entities = frozenset((
+        "lock.front_of_house_front_door",
+        "lock.back_door",
+    ))
     def walk(node):
         if isinstance(node, dict):
             for key, value in node.items():
@@ -82,13 +86,13 @@ def check_config(config, restoring=False):
                         allowed = (
                             key == "perform_action"
                             and node.get("action") == "perform-action"
-                            and node.get("target") == {"entity_id": "lock.front_of_house_front_door"}
+                            and node.get("target") in ({"entity_id": entity} for entity in allowed_unlock_entities)
                             and isinstance(node.get("confirmation"), dict)
                             and bool(str(node["confirmation"].get("text", "")).strip())
                             and node.get("data") in (None, {})
                         )
                         if not allowed:
-                            raise BridgeError("Unlock requires confirmation and the exact front-door entity")
+                            raise BridgeError("Unlock requires confirmation and the exact front-door or back-door entity")
                     if value == "climate.set_hvac_mode":
                         entity_id = node.get("target", {}).get("entity_id")
                         allowed_hvac = (
