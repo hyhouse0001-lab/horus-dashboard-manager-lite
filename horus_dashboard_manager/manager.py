@@ -210,13 +210,17 @@ def github_get(path):
 
 
 def github_put(path, document, message):
-    current, sha = github_get(path)
-    _ = current
+    record = github_request(path)
+    sha = None
+    if record is not None:
+        if not isinstance(record, dict) or not record.get("sha"):
+            raise BridgeError("Missing GitHub file revision")
+        sha = record["sha"]
     payload = {
         "message": message,
         "branch": BRANCH,
         "content": base64.b64encode(
-            (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+            (json.dumps(document, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
         ).decode("ascii"),
     }
     if sha:
