@@ -1,3 +1,5 @@
+import base64
+import json
 import pathlib
 import sys
 import unittest
@@ -9,6 +11,18 @@ import manager
 
 
 class ScopeTests(unittest.TestCase):
+    def test_sync_replaces_snapshot_without_inline_content(self):
+        document = {"config": {"views": [{"title": "Café"}]}}
+        metadata = {"encoding": "none", "content": "", "sha": "existing"}
+        with patch.object(manager, "github_request", side_effect=[metadata, {}]) as request:
+            manager.github_put(manager.SNAPSHOT_PATH, document, "Sync")
+        path, method, payload = request.call_args.args
+        self.assertEqual((path, method), (manager.SNAPSHOT_PATH, "PUT"))
+        self.assertEqual(payload["sha"], "existing")
+        raw = base64.b64decode(payload["content"]).decode()
+        self.assertEqual(json.loads(raw), document)
+        self.assertEqual(raw.count("\n"), 1)
+
     def test_single_dashboard_path(self):
         self.assertEqual(manager.PATH, "fuller-family-test")
 
