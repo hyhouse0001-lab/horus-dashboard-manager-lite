@@ -428,5 +428,82 @@ class ACControlsTests(unittest.TestCase):
 
 
 
+class GithubLargeSnapshotTests(unittest.TestCase):
+    """GitHub Contents uses encoding=none above 1 MiB; preserve SHA-gated writes."""
+
+    SHA = "a" * 40
+    PATH = manager.SNAPSHOT_PATH
+
+    @staticmethod
+    def encoded(document):
+        import base64
+        import json
+        return base64.b64encode(json.dumps(document).encode("utf-8")).decode("ascii")
+
+    def test_small_contents_file_keeps_existing_read_path(self):
+        document = {"views": [{"title": "Home"}]}
+        entry = {"encoding": "base64", "content": self.encoded(document), "sha": self.SHA}
+        with patch.object(manager, "github_request", return_value=entry) as request:
+            result, sha = manager.github_get(self.PATH)
+        self.assertEqual(result, document)
+        self.assertEqual(sha, self.SHA)
+        request.assert_called_once_with(self.PATH)
+
+    def test_large_snapshot_falls_back_to_same_sha_blob(self):
+        document = {"config": {"views": [{"image": "x" * 1_050_000}]}}
+        metadata = {"encoding": "none", "content": "", "sha": self.SHA, "size": 1_050_050}
+        blob = {"encoding": "base64", "content": self.encoded(document), "sha": self.SHA}
+        with patch.object(manager, "github_request", side_effect=[metadata, blob]) as request:
+            result, sha = manager.github_get(self.PATH)
+        self.assertEqual(result, document)
+        self.assertEqual(sha, self.SHA)
+        self.assertEqual(request.call_args_list[0].args, (self.PATH,))
+        self.assertEqual(request.call_args_list[1].kwargs, {"blob_sha": self.SHA})
+
+    def test_large_snapshot_sync_uses_original_sha_for_safe_put(self):
+        document = {"config": {"views": [{"title": "Changed"}]}}
+        metadata = {"encoding": "none", "content": "", "sha": self.SHA}
+        blob = {"encoding": "base64", "content": self.encoded(document), "sha": self.SHA}
+        with patch.object(manager, "github_request", side_effect=[metadata, blob, {"ok": True}]) as request:
+            manager.github_put(self.PATH, document, "Sync test")
+        calls = request.call_args_list
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[1].kwargs, {"blob_sha": self.SHA})
+        self.assertEqual(calls[2].args[1], "PUT")
+        self.assertEqual(calls[2].args[2]["sha"], self.SHA)
+        self.assertEqual(calls[2].args[2]["branch"], manager.BRANCH)
+
+    def test_rejects_invalid_blob_sha_and_mismatched_response(self):
+        for sha in ("../other", "not-a-sha", "A" * 40, ""):
+            with self.subTest(sha=sha), patch.object(manager, "github_request",
+                    return_value={"encoding": "none", "content": "", "sha": sha}):
+                with self.assertRaisesRegex(manager.BridgeError, "Unexpected GitHub file response"):
+                    manager.github_get(self.PATH)
+        metadata = {"encoding": "none", "content": "", "sha": self.SHA}
+        mismatched = {"encoding": "base64", "content": self.encoded({}), "sha": "b" * 40}
+        with patch.object(manager, "github_request", side_effect=[metadata, mismatched]):
+            with self.assertRaisesRegex(manager.BridgeError, "Unexpected GitHub blob response"):
+                manager.github_get(self.PATH)
+
+    def test_blob_endpoint_is_read_only_and_fixed_to_repository(self):
+        import io
+        import json
+        from urllib.request import Request
+        response = io.BytesIO(json.dumps({"encoding": "base64", "sha": self.SHA}).encode())
+        with patch.object(manager, "github_token", return_value="test-token"), patch.object(
+                manager, "urlopen", return_value=response) as urlopen:
+            result = manager.github_request(self.PATH, blob_sha=self.SHA)
+        self.assertEqual(result["sha"], self.SHA)
+        req = urlopen.call_args.args[0]
+        self.assertIsInstance(req, Request)
+        self.assertEqual(req.get_method(), "GET")
+        self.assertEqual(req.full_url, "https://api.github.com/repos/" +
+                         manager.PRIVATE_REPO + "/git/blobs/" + self.SHA)
+        with patch.object(manager, "github_token", return_value="test-token"):
+            with self.assertRaisesRegex(manager.BridgeError, "Invalid GitHub blob request"):
+                manager.github_request(self.PATH, method="PUT", blob_sha=self.SHA)
+
+
+
 if __name__ == "__main__":
     unittest.main()
