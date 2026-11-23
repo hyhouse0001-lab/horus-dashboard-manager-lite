@@ -168,11 +168,18 @@ def github_token():
     raise BridgeError("Configure a GitHub token in the add-on Configuration tab first")
 
 
-def github_request(path, method="GET", payload=None):
+def github_request(path, method="GET", payload=None, *, blob_sha=None):
     token = github_token()
-    api = "https://api.github.com/repos/" + PRIVATE_REPO + "/contents/" + quote(path, safe="/")
-    if method == "GET":
-        api += "?ref=" + BRANCH
+    if blob_sha is not None:
+        # The Contents API returns encoding=none for files over 1 MiB.
+        # Fetch only a validated SHA from the same fixed private repository.
+        if method != "GET" or not isinstance(blob_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", blob_sha):
+            raise BridgeError("Invalid GitHub blob request")
+        api = "https://api.github.com/repos/" + PRIVATE_REPO + "/git/blobs/" + blob_sha
+    else:
+        api = "https://api.github.com/repos/" + PRIVATE_REPO + "/contents/" + quote(path, safe="/")
+        if method == "GET":
+            api += "?ref=" + BRANCH
     body = None
     if payload is not None:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -198,14 +205,26 @@ def github_get(path):
     record = github_request(path)
     if record is None:
         return None, None
-    if not isinstance(record, dict) or record.get("encoding") != "base64":
+    if not isinstance(record, dict):
+        raise BridgeError("Unexpected GitHub file response")
+    if record.get("encoding") == "none" and record.get("content") in ("", None):
+        # GitHub's Contents endpoint returns only metadata for 1-100 MiB files.
+        # The blob endpoint restores the content without weakening SHA-based writes.
+        sha = record.get("sha")
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+            raise BridgeError("Unexpected GitHub file response")
+        blob = github_request(path, blob_sha=sha)
+        if not isinstance(blob, dict) or blob.get("sha") != sha:
+            raise BridgeError("Unexpected GitHub blob response")
+        record = blob
+    if record.get("encoding") != "base64":
         raise BridgeError("Unexpected GitHub file response")
     try:
         raw = base64.b64decode(record["content"], validate=False)
         if len(raw) > MAX_RESPONSE:
             raise BridgeError("GitHub file exceeds size limit")
         return json.loads(raw.decode("utf-8")), record["sha"]
-    except (KeyError, ValueError, UnicodeDecodeError):
+    except (KeyError, TypeError, ValueError, UnicodeDecodeError):
         raise BridgeError("GitHub file is not valid JSON") from None
 
 
