@@ -19,3 +19,6 @@ For setup, see [INSTALLATION.md](../INSTALLATION.md). The public repository cont
 Although Lovelace synchronization remains restricted to `fuller-family-test`, clicking **Install Family Controls** explicitly opts in to create one named Home Assistant toggle helper and four pre-defined scripts. The operation accepts no arbitrary script bodies, entity IDs or external commands from the browser or GitHub. It is not performed automatically by applying a dashboard proposal. It requires a separate approval click.
 
 The 15-second updater is an independent add-on with its own Supervisor manager permissions, not included in the Dashboard Manager runtime.
+
+## Evolution Center (0.2.16 draft)
+Read-only admin ingress page for real, private repository reports. Loads a fixed path on the dedicated evolution/reports branch; no new Home Assistant commands or writes. Counts derive from reported items, not illustrative progress. An unavailable report fails visibly; reviewed does not mean ready to apply. The report publisher and live model execution are separately gated. Feedback controls and visual previews are future features; use existing approved proposal preview and owner feedback channel.

@@ -168,11 +168,11 @@ def github_token():
     raise BridgeError("Configure a GitHub token in the add-on Configuration tab first")
 
 
-def github_request(path, method="GET", payload=None):
+def github_request(path, method="GET", payload=None, *, ref=BRANCH):
     token = github_token()
     api = "https://api.github.com/repos/" + PRIVATE_REPO + "/contents/" + quote(path, safe="/")
     if method == "GET":
-        api += "?ref=" + BRANCH
+        api += "?ref=" + quote(ref, safe="")
     body = None
     if payload is not None:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -194,8 +194,8 @@ def github_request(path, method="GET", payload=None):
         raise BridgeError("GitHub is unreachable from this add-on") from None
 
 
-def github_get(path):
-    record = github_request(path)
+def github_get(path, *, ref=BRANCH):
+    record = github_request(path) if ref == BRANCH else github_request(path, ref=ref)
     if record is None:
         return None, None
     if not isinstance(record, dict) or record.get("encoding") != "base64":
@@ -822,6 +822,56 @@ def compare_dashboard_configs(before, after, compact=True):
         prior, proposed, fromfile="CURRENT", tofile="PROPOSED", lineterm=""))
 
 
+
+EVOLUTION_REPORT_PATH = "evolution/reports/latest.json"
+EVOLUTION_REPORT_BRANCH = "evolution/reports"
+
+def load_evolution_report():
+    report, _ = github_get(EVOLUTION_REPORT_PATH, ref=EVOLUTION_REPORT_BRANCH)
+    if report is None:
+        return None
+    if not isinstance(report, dict) or report.get("schema_version") != 1:
+        raise BridgeError("Unsupported Evolution report")
+    if report.get("mode") not in ("standby", "active", "blocked", "unknown"):
+        raise BridgeError("Invalid Evolution report mode")
+    if not isinstance(report.get("items"), list) or len(report["items"]) > 50:
+        raise BridgeError("Invalid Evolution report items")
+    for item in report["items"]:
+        if not isinstance(item, dict) or not isinstance(item.get("title"), str):
+            raise BridgeError("Invalid Evolution report item")
+        if item.get("status") not in ("recommended", "implementing", "reviewing", "rejected", "reviewed", "blocked"):
+            raise BridgeError("Invalid Evolution report item status")
+    return report
+
+def evolution_content(report):
+    def esc(value, limit=2000):
+        return html.escape(str(value)[:limit], quote=True)
+    back = '<div class="actions">' + action_link("./", "Dashboard Manager", secondary=True) + '</div>'
+    if report is None:
+        return '<div class="module alert"><h2>No report published</h2><p>The engine has not published its first report. No recommendations are inferred.</p></div>' + back
+    items = report["items"]
+    counts = [(label, sum(x["status"] in states for x in items)) for label, states in
+              (("Recommendations", ("recommended",)), ("In development", ("implementing","reviewing")), ("Reviewed", ("reviewed",)))]
+    content = '<div class="evo"><p class="eyebrow">HORUS / AUTONOMOUS ENGINEERING</p>'
+    content += '<div class="module"><span class="status">' + esc(report["mode"].upper()) + '</span><p>' + esc(report.get("summary","")) + '</p>'
+    content += '<p class="muted">Report generated: ' + esc(report.get("generated_at","Unknown"),80) + ' · Source revision: ' + esc(report.get("source_commit","Unknown"),64) + '</p></div>'
+    content += '<div class="evo-grid">' + ''.join('<div class="module"><div class="evo-num">' + str(n) + '</div><p>' + label + '</p></div>' for label,n in counts) + '</div>'
+    content += '<div class="module"><h2>Engineering team</h2><p><strong>Claude Opus</strong> — implementation</p><p><strong>OpenAI</strong> — independent review and feedback</p><p class="muted">Roles, not live activity indicators.</p></div>'
+    content += '<div class="module"><h2>Development pipeline</h2>'
+    if not items: content += '<p>No recommendations published in this report.</p>'
+    for item in items:
+        content += '<article class="evo-item"><span class="status">' + esc(item["status"].replace("_"," ").upper(),40) + '</span><h3>' + esc(item["title"],160) + '</h3><p>' + esc(item.get("summary","")) + '</p>'
+        if item.get("review"): content += '<p><strong>Independent review:</strong> ' + esc(item["review"]) + '</p>'
+        if item.get("evidence"): content += '<p class="muted">Evidence: ' + esc(item["evidence"]) + '</p>'
+        content += '</article>'
+    content += '</div><div class="module"><h2>System health and history</h2><p>' + esc(report.get("health","Not reported")) + '</p>'
+    coverage = report.get("coverage")
+    if isinstance(coverage,dict):
+        for key,label in (("historical_revisions_identified","Historical revisions identified"),("views_in_baseline","Baseline views"),("backfill","History backfill")):
+            if key in coverage: content += '<p>' + label + ': ' + esc(coverage[key],80) + '</p>'
+    content += '<p class="muted">Reports may be delayed. A reviewed recommendation is not a deployment approval. Check current proposal freshness and diff in the existing preview.</p></div>'
+    return content + '<div class="actions">' + action_link("evolution", "Refresh report", secondary=True) + action_link("preview", "Review current dashboard proposal", secondary=True) + '</div></div>' + back
+
 def page(title, content):
     # Zero-JavaScript, CSP-compatible Home Assistant ingress interface.
     style = """*{box-sizing:border-box}body{font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,
@@ -874,6 +924,7 @@ def page(title, content):
     code{color:#97eafe}a:not(.control){color:#83d9ff}
     @media(max-width:520px){.actions{grid-template-columns:1fr}.brand{align-items:flex-start}}
     """
+    style += ".evo{color:#f2dfca}.evo .eyebrow,.evo h2{color:#d6b18a}.evo .module{background:#1b1819;border-color:#6e5845}.evo .status{color:#f2dfca;background:#382a23;border-color:#9c7857}.evo-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.evo-grid .module{margin:0;text-align:center;padding:12px;overflow-wrap:anywhere}.evo-num{font-size:clamp(25px,5vw,42px);font-weight:700;color:#d6b18a}.evo-item{padding:14px 0;border-top:1px solid #6e5845}.evo-item h3{font-size:18px;margin:8px 0}.evo-item p{overflow-wrap:anywhere}@media(max-width:430px){.evo-grid{grid-template-columns:1fr}}"
     body = ('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
             '<meta charset="utf-8"><title>' + html.escape(title) + '</title>'
             '<style>' + style + '</style></head><body><main><header class="brand">'
@@ -892,7 +943,7 @@ def form_button(action, label, extra="", danger=False):
 
 
 def action_link(path, label, secondary=False):
-    if path not in ("test", "preview", "full-diff", "./"):
+    if path not in ("test", "preview", "full-diff", "evolution", "./"):
         raise ValueError("Invalid navigation target")
     return ('<a class="control ' + ("secondary" if secondary else "primary") +
             '" href="' + html.escape(path, quote=True) + '">' +
@@ -929,7 +980,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.12"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.16"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -969,10 +1020,17 @@ class Handler(BaseHTTPRequestHandler):
                             + form_button("/sync", "Sync dashboard to GitHub")
                             + action_link("preview", "Preview proposed update")
                             + action_link("test", "Test connection", secondary=True)
-                            + restore + '</div>')
+                            + restore + '</div>' + '<div class="actions">' + action_link("evolution", "Evolution Center", secondary=True) + '</div>')
             content += ('<p class="muted">Only Fuller Family Test can be changed. '
                         'A proposal requires your approval before saving.</p>')
             self.show(200, "Dashboard Manager", content)
+        elif url.path == "/evolution":
+            try:
+                report = load_evolution_report()
+                self.show(200, "Evolution Center", evolution_content(report))
+            except Exception:
+                LOG.warning("Evolution report unavailable")
+                self.show(503, "Evolution Center", '<div class="module alert"><p>Report unavailable. Check private repository connectivity.</p></div>' + action_link("./", "Dashboard Manager", secondary=True))
         elif url.path == "/preview":
             with LOCK:
                 try:
