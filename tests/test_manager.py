@@ -444,3 +444,30 @@ class ACControlsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EvolutionTests(unittest.TestCase):
+    def report(self):
+        return {"schema_version":1,"mode":"active","summary":"<script>alert(1)</script>",
+                "items":[{"title":"Spacing","status":"reviewed","summary":"<img src=x onerror=alert(1)>"}]}
+
+    def test_reads_private_report_only(self):
+        with patch.object(manager,"github_get",return_value=(self.report(),"sha")) as get:
+            self.assertEqual(manager.load_evolution_report()["mode"],"active")
+            get.assert_called_once_with(manager.EVOLUTION_REPORT_PATH,ref=manager.EVOLUTION_REPORT_BRANCH)
+
+    def test_escapes_untrusted_data_and_no_apply_form(self):
+        body=manager.evolution_content(self.report())
+        self.assertNotIn("<script>",body)
+        self.assertNotIn("<img",body)
+        self.assertIn("&lt;script&gt;",body)
+        self.assertNotIn('method="post"',body)
+
+    def test_unpublished_report(self):
+        self.assertIn("No report published",manager.evolution_content(None))
+
+    def test_rejects_unrecognized_status(self):
+        report=self.report()
+        report["items"][0]["status"]="auto_deploy"
+        with patch.object(manager,"github_get",return_value=(report,"sha")):
+            with self.assertRaises(manager.BridgeError):manager.load_evolution_report()
