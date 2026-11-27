@@ -166,7 +166,7 @@ def save(name, record):
 def pending():
     return [p.stem for p in JOURNALS.glob("*.json") if load(p.stem)["status"] == "pending"]
 
-def restore(name, resource):
+def check_restore(name, resource):
     record = load(name)
     entries = record["entries"]
     rows = resource("list") if any(e["item"]["register"] for e in entries) else []
@@ -182,7 +182,12 @@ def restore(name, resource):
         backup = None if e["backup"] is None else base64.b64decode(e["backup"], validate=True)
         if hash_or_none(backup) != e["before"]:
             raise AssetError("Asset backup checksum mismatch")
-    for e in reversed(entries):
+    return record
+
+
+def restore(name, resource):
+    record = check_restore(name, resource)
+    for e in reversed(record["entries"]):
         n = e["item"]["path"]
         if e["item"]["register"]:
             set_resource(resource, n, e["old"])

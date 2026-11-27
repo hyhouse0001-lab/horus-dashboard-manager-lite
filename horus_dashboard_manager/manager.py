@@ -276,7 +276,7 @@ def load_proposal():
 def require_fresh(proposal, live):
     if not hmac.compare_digest(proposal["base_sha256"], digest(live)):
         raise BridgeError("Dashboard changed since sync. Sync again before applying.")
-    if digest(proposal["config"]) == digest(live):
+    if digest(proposal["config"]) == digest(live) and not proposal.get("assets"):
         raise BridgeError("Proposal is identical to the current dashboard")
 
 
@@ -333,8 +333,9 @@ def apply_proposal(requested_sha, requested_assets=None):
         if plan_hash:
             asset_backup = assets.install(proposal["assets"], plan_hash, github_request, asset_bridge.resource, context)
         require_fresh(proposal, read_dashboard())
-        save_attempted = True
-        save_dashboard(target)
+        if digest(target) != prior_hash:
+            save_attempted = True
+            save_dashboard(target)
         actual = read_dashboard()
         if digest(actual) != digest(target):
             raise BridgeError("Saved dashboard did not match the proposed version")
@@ -391,6 +392,7 @@ def recover_assets():
     actual = digest(live)
     if actual not in (before, context.get("after_sha256")):
         raise BridgeError("Dashboard changed independently; recovery refused")
+    assets.check_restore(transaction, asset_bridge.resource)
     if actual != before:
         backup(live)
         save_dashboard(previous, restoring=True)
@@ -427,9 +429,10 @@ def rollback_last():
         raise BridgeError("Backup is unavailable or damaged") from None
     if digest(previous) != state.get("before_sha256"):
         raise BridgeError("Backup hash verification failed")
-    backup(live)
     if state.get("asset_backup"):
+        assets.check_restore(state["asset_backup"], asset_bridge.resource)
         assets.mark_pending(state["asset_backup"])
+    backup(live)
     save_dashboard(previous, restoring=True)
     if digest(read_dashboard()) != digest(previous):
         raise BridgeError("Restored configuration did not verify")

@@ -72,6 +72,8 @@ def prepare(proposal, live):
     if m is None:
         return "", ""
     entries = assets.plan(m, resource)
+    if proposal["config"] == live and all(e["before"] == e["item"]["sha256"] and assets.same(e["old"], e["new"]) for e in entries):
+        raise assets.AssetError("All requested assets already installed; no changes")
     lines = ["Git commit " + m["ref"]]
     for e in entries:
         i = e["item"]
