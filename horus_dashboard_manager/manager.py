@@ -19,6 +19,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 import re
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import asset_manager as assets
+import asset_bridge
 from urllib.request import Request, urlopen
 
 PATH = "fuller-family-test"
@@ -168,11 +172,11 @@ def github_token():
     raise BridgeError("Configure a GitHub token in the add-on Configuration tab first")
 
 
-def github_request(path, method="GET", payload=None):
+def github_request(path, method="GET", payload=None, *, ref=None):
     token = github_token()
     api = "https://api.github.com/repos/" + PRIVATE_REPO + "/contents/" + quote(path, safe="/")
     if method == "GET":
-        api += "?ref=" + BRANCH
+        api += "?ref=" + (ref or BRANCH)
     body = None
     if payload is not None:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -185,7 +189,10 @@ def github_request(path, method="GET", payload=None):
     })
     try:
         with urlopen(req, timeout=15) as response:
-            return json.load(response)
+            raw = response.read(2_500_001)
+            if len(raw) > 2_500_000:
+                raise BridgeError("GitHub response exceeds limit")
+            return json.loads(raw)
     except HTTPError as exc:
         if exc.code == 404 and method == "GET":
             return None
@@ -260,6 +267,8 @@ def load_proposal():
     if not isinstance(summary, str) or not (1 <= len(summary) <= 500):
         raise BridgeError("Proposal requires a short change summary")
     check_config(document.get("config"))
+    if "assets" in document:
+        assets.manifest(document["assets"])
     validate_required_controls(document["config"])
     return document, sha
 
@@ -305,16 +314,22 @@ def state_write(info):
     os.replace(temporary, STATE_PATH)
 
 
-def apply_proposal(requested_sha):
+def apply_proposal(requested_sha, requested_assets=None):
     proposal, sha = load_proposal()
     if not isinstance(requested_sha, str) or not hmac.compare_digest(sha, requested_sha):
         raise BridgeError("Proposal changed since preview. Review the new version first.")
     before = read_dashboard()
     require_fresh(proposal, before)
+    plan_hash, _ = asset_bridge.prepare(proposal, before)
+    if plan_hash and (not isinstance(requested_assets, str) or not hmac.compare_digest(plan_hash, requested_assets)):
+        raise BridgeError("Asset state changed since preview; review again")
     prior_hash = digest(before)
     name = backup(before)
     target = proposal["config"]
+    asset_backup = None
     try:
+        if plan_hash:
+            asset_backup = assets.install(proposal["assets"], plan_hash, github_request, asset_bridge.resource)
         save_dashboard(target)
         actual = read_dashboard()
         if digest(actual) != digest(target):
@@ -327,8 +342,11 @@ def apply_proposal(requested_sha):
                 LOG.error("Rollback verification failed; check dashboard manually")
         except Exception:
             LOG.exception("Automatic dashboard rollback failed")
+        if asset_backup is not None and digest(read_dashboard()) == prior_hash:
+            assets.restore(asset_backup, asset_bridge.resource)
         raise
     state_write({
+        "asset_backup": asset_backup,
         "backup": name,
         "before_sha256": prior_hash,
         "after_sha256": digest(actual),
@@ -336,6 +354,8 @@ def apply_proposal(requested_sha):
         "applied_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "rolled_back": False,
     })
+    if asset_backup is not None:
+        assets.finish(asset_backup)
     try:
         github_put(SNAPSHOT_PATH, snapshot_document(actual),
                    "Record applied Fuller Family Test dashboard revision")
@@ -367,6 +387,8 @@ def rollback_last():
     save_dashboard(previous, restoring=True)
     if digest(read_dashboard()) != digest(previous):
         raise BridgeError("Restored configuration did not verify")
+    if state.get("asset_backup"):
+        assets.restore(state["asset_backup"], asset_bridge.resource)
     state["rolled_back"] = True
     state_write(state)
     try:
@@ -929,7 +951,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.2.12"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.0"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -979,11 +1001,14 @@ class Handler(BaseHTTPRequestHandler):
                     proposed, sha = load_proposal()
                     live = read_dashboard()
                     require_fresh(proposed, live)
+                    asset_hash, asset_text = asset_bridge.prepare(proposed, live)
+                    asset_display = ("<div class=\'module\'><h2>Verified assets requested</h2><p>Frontend modules run in Home Assistant browsers and resources are global. Approve only reviewed code.</p><pre>" + html.escape(asset_text) + "</pre></div>") if asset_text else ""
                     display_diff = compare_dashboard_configs(live, proposed["config"], compact=True)
                     if len(display_diff) > 240_000:
                         raise BridgeError("Compact preview is too large; narrow the proposed update")
                     extra = ('<input type="hidden" name="proposal_sha" value="' +
                              html.escape(sha, quote=True) + '">')
+                    extra += '<input type="hidden" name="asset_hash" value="' + html.escape(asset_hash, quote=True) + '">'
                     content = ('<p><strong>Change:</strong> ' + html.escape(proposed["summary"]) + '</p>'
                                '<p>Current views: ' + str(len(live["views"])) +
                                ' | Proposed views: ' + str(len(proposed["config"]["views"])) + '</p>'
@@ -994,7 +1019,7 @@ class Handler(BaseHTTPRequestHandler):
                                '<div class="actions">' +
                                action_link("full-diff", "View complete, unabridged diff", secondary=True) +
                                '</div>' +
-                               '<div class="actions">' + form_button("/apply", "Approve & Apply", extra) + '</div>' +
+                               asset_display + '<div class="actions">' + form_button("/apply", "Approve & Apply", extra) + '</div>' +
                                '<div class="actions">' + action_link("./", "Cancel", secondary=True) + '</div>')
                     self.show(200, "Review Fuller Family Test update", content)
                 except MissingControls as exc:
@@ -1064,7 +1089,7 @@ class Handler(BaseHTTPRequestHandler):
                                action_link("preview", "Preview Dashboard Update") + "</div>")
                 elif route.path == "/apply":
                     sha = data.get("proposal_sha", [""])[0]
-                    result = apply_proposal(sha)
+                    result = apply_proposal(sha, data.get("asset_hash", [""])[0])
                     title = "Dashboard updated"
                     message = ("<p>Fuller Family Test saved and verified with " +
                                str(result["views"]) + " view(s). Automatic backup created.</p>")
@@ -1079,7 +1104,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(200, title, message + '<div class="actions">' + action_link("./", "Dashboard Manager", secondary=True) + '</div>')
         except Exception as exc:
             LOG.warning("Action %s failed: %s", route.path, type(exc).__name__)
-            detail = str(exc) if isinstance(exc, BridgeError) else "Unexpected operation failure; inspect add-on logs"
+            detail = str(exc) if isinstance(exc, (BridgeError, assets.AssetError)) else "Unexpected operation failure; inspect add-on logs"
             self.show(409, "Action failed", "<p>" + html.escape(detail) +
                       '</p><div class="actions">' + action_link("./", "Dashboard Manager", secondary=True) + '</div>')
 
