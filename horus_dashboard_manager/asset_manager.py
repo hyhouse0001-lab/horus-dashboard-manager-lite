@@ -195,7 +195,7 @@ def restore(name, resource):
     record["status"] = "restored"
     save(name, record)
 
-def install(m, expected, fetch, resource):
+def install(m, expected, fetch, resource, context=None):
     if pending():
         raise AssetError("Unfinished asset transaction; recovery required")
     entries = plan(m, resource)
@@ -210,7 +210,7 @@ def install(m, expected, fetch, resource):
             raise AssetError("Asset state changed during backup")
         e["backup"] = None if prior is None else base64.b64encode(prior).decode("ascii")
     name = secrets.token_hex(16)
-    save(name, {"status": "pending", "entries": entries})
+    save(name, {"status": "pending", "entries": entries, "context": context or {}})
     try:
         for e, data in zip(entries, raw):
             atomic(path(e["item"]["path"]), data)
@@ -222,6 +222,12 @@ def install(m, expected, fetch, resource):
         restore(name, resource)
         raise
     return name
+
+def mark_pending(name):
+    record = load(name)
+    record["status"] = "pending"
+    save(name, record)
+
 
 def finish(name):
     record = load(name)

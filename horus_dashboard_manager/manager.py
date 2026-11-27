@@ -327,23 +327,30 @@ def apply_proposal(requested_sha, requested_assets=None):
     name = backup(before)
     target = proposal["config"]
     asset_backup = None
+    context = {"backup": name, "before_sha256": prior_hash, "after_sha256": digest(target), "proposal_sha": sha}
+    save_attempted = False
     try:
         if plan_hash:
-            asset_backup = assets.install(proposal["assets"], plan_hash, github_request, asset_bridge.resource)
+            asset_backup = assets.install(proposal["assets"], plan_hash, github_request, asset_bridge.resource, context)
+        require_fresh(proposal, read_dashboard())
+        save_attempted = True
         save_dashboard(target)
         actual = read_dashboard()
         if digest(actual) != digest(target):
             raise BridgeError("Saved dashboard did not match the proposed version")
     except Exception:
-        # Best-effort repair to the verified pre-apply configuration.
+        # Never overwrite an unrelated live edit, including during asset download.
         try:
-            save_dashboard(before, restoring=True)
-            if digest(read_dashboard()) != prior_hash:
-                LOG.error("Rollback verification failed; check dashboard manually")
+            live_hash = digest(read_dashboard())
+            if save_attempted and live_hash == digest(target):
+                save_dashboard(before, restoring=True)
+                live_hash = digest(read_dashboard())
+            if asset_backup is not None and (live_hash == prior_hash or not save_attempted):
+                assets.restore(asset_backup, asset_bridge.resource)
+            if save_attempted and live_hash != prior_hash:
+                LOG.error("Dashboard changed unexpectedly; automatic rollback refused")
         except Exception:
-            LOG.exception("Automatic dashboard rollback failed")
-        if asset_backup is not None and digest(read_dashboard()) == prior_hash:
-            assets.restore(asset_backup, asset_bridge.resource)
+            LOG.exception("Automatic rollback failed; use recovery")
         raise
     state_write({
         "asset_backup": asset_backup,
@@ -366,7 +373,44 @@ def apply_proposal(requested_sha, requested_assets=None):
     return {"views": len(actual["views"]), "backup": name, "synced": synced}
 
 
+def recover_assets():
+    ids = assets.pending()
+    if len(ids) != 1:
+        raise BridgeError("Expected exactly one interrupted asset transaction")
+    transaction = ids[0]
+    context = assets.load(transaction).get("context", {})
+    name = context.get("backup")
+    if not isinstance(name, str) or os.path.basename(name) != name or not name.endswith(".json"):
+        raise BridgeError("Recovery dashboard backup reference invalid")
+    with open(os.path.join(BACKUPS_DIR, name), encoding="utf-8") as handle:
+        previous = json.load(handle)
+    before = context.get("before_sha256")
+    if digest(previous) != before:
+        raise BridgeError("Recovery dashboard backup hash mismatch")
+    live = read_dashboard()
+    actual = digest(live)
+    if actual not in (before, context.get("after_sha256")):
+        raise BridgeError("Dashboard changed independently; recovery refused")
+    if actual != before:
+        backup(live)
+        save_dashboard(previous, restoring=True)
+        if digest(read_dashboard()) != before:
+            raise BridgeError("Dashboard recovery did not verify")
+    assets.restore(transaction, asset_bridge.resource)
+    state = state_read()
+    if state.get("asset_backup") == transaction:
+        state["rolled_back"] = True
+        state_write(state)
+    try:
+        github_put(SNAPSHOT_PATH, snapshot_document(previous), "Record interrupted HORUS asset recovery")
+    except Exception:
+        LOG.warning("Recovered dashboard; GitHub snapshot sync failed")
+    return len(previous["views"])
+
+
 def rollback_last():
+    if assets.pending():
+        raise BridgeError("Recover interrupted asset transaction first")
     state = state_read()
     name = state.get("backup", "")
     if state.get("rolled_back") or not isinstance(name, str) or not name.endswith(".json"):
@@ -384,6 +428,8 @@ def rollback_last():
     if digest(previous) != state.get("before_sha256"):
         raise BridgeError("Backup hash verification failed")
     backup(live)
+    if state.get("asset_backup"):
+        assets.mark_pending(state["asset_backup"])
     save_dashboard(previous, restoring=True)
     if digest(read_dashboard()) != digest(previous):
         raise BridgeError("Restored configuration did not verify")
@@ -905,7 +951,7 @@ def page(title, content):
 
 
 def form_button(action, label, extra="", danger=False):
-    if action not in ("/sync", "/apply", "/rollback", "/setup-household"):
+    if action not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets"):
         raise ValueError("Invalid form action")
     return ('<form action="' + html.escape(action.lstrip("/"), quote=True) + '" method="post">'
             '<input type="hidden" name="csrf" value="' + html.escape(CSRF, quote=True) + '">'
@@ -981,7 +1027,9 @@ class Handler(BaseHTTPRequestHandler):
                             'then restart the add-on.</p></div>')
                 content += '<div class="actions">' + action_link("test", "Test connection") + '</div>'
             else:
-                can_restore = bool(state.get("backup") and not state.get("rolled_back"))
+                if assets.pending():
+                    content += ('<div class="module alert"><h2>Interrupted update</h2><p>Recover the verified previous dashboard and assets before applying another update.</p>' + form_button("/recover-assets", "Recover interrupted update", danger=True) + "</div>")
+                can_restore = bool(state.get("backup") and not state.get("rolled_back") and not assets.pending())
                 restore = (
                     form_button("/rollback", "Restore previous dashboard", danger=True)
                     if can_restore else
@@ -1063,7 +1111,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return
         route = urlsplit(self.path)
-        if route.path not in ("/sync", "/apply", "/rollback", "/setup-household") or route.query:
+        if route.path not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets") or route.query:
             self.show(405, "Not allowed", "<p>No other write operations are supported.</p>")
             return
         try:
@@ -1087,6 +1135,10 @@ class Handler(BaseHTTPRequestHandler):
                     message = ("<p>Heru, Nest, humidity, and room AC controls are installed (" + str(count) +
                                " fixed scripts).</p><div class='actions'>" +
                                action_link("preview", "Preview Dashboard Update") + "</div>")
+                elif route.path == "/recover-assets":
+                    count = recover_assets()
+                    title = "Interrupted update recovered"
+                    message = "<p>Verified previous dashboard and assets restored. Views: " + str(count) + ".</p>"
                 elif route.path == "/apply":
                     sha = data.get("proposal_sha", [""])[0]
                     result = apply_proposal(sha, data.get("asset_hash", [""])[0])
