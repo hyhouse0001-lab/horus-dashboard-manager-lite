@@ -3,12 +3,14 @@ on:
   push:
     paths:
       - "horus_dashboard_manager/**"
+      - "horus_blink_event_receiver/**"
       - "horus_update_watcher/**"
       - "tests/**"
       - ".github/workflows/manager-ci.yml"
   pull_request:
     paths:
       - "horus_dashboard_manager/**"
+      - "horus_blink_event_receiver/**"
       - "tests/**"
       - ".github/workflows/manager-ci.yml"
 jobs:
@@ -20,6 +22,6 @@ jobs:
         with:
           python-version: "3.13"
       - name: Compile Python without running it
-        run: python -m py_compile horus_dashboard_manager/manager.py horus_update_watcher/watcher.py
+        run: python -m py_compile horus_dashboard_manager/manager.py horus_update_watcher/watcher.py horus_blink_event_receiver/app.py
       - name: Single-target safety tests
         run: python -m unittest discover -s tests -v
