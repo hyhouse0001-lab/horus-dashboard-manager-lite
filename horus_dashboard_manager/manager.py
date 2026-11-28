@@ -812,6 +812,152 @@ def set_schlage_polling(enabled):
     return desired
 
 
+WATCHDOG_PATH = "/data/horus_kiosk_watchdog.enabled"
+WATCHDOG_EVENT = "horus_kiosk_heartbeat"
+WATCHDOG_PHASES = frozenset(("healthy", "protected", "main_stale", "render_stale"))
+WATCHDOG_STATUS = {"connected": False, "phase": "waiting", "last_heartbeat": None,
+                   "last_recovery": None, "recoveries": 0}
+WATCHDOG_STATE_LOCK = threading.Lock()
+
+
+class KioskWatchdog:
+    def __init__(self):
+        self.last = None
+        self.phase = "waiting"
+        self.bad = 0
+        self.last_recovery = None
+        self.attempts = []
+
+    def beat(self, phase, now):
+        if phase not in WATCHDOG_PHASES:
+            return False
+        if self.last is not None and now - self.last < 2:
+            return False
+        self.last = now
+        self.phase = phase
+        self.bad = self.bad + 1 if phase in ("main_stale", "render_stale") else 0
+        return True
+
+    def reason(self, now):
+        # Require a real heartbeat before arming; no false recovery of old clients.
+        if self.last is None or self.phase == "protected":
+            return None
+        if self.last_recovery is not None and now - self.last_recovery < 300:
+            return None
+        self.attempts = [t for t in self.attempts if now - t < 3600]
+        if len(self.attempts) >= 3:
+            return None
+        if now - self.last >= 15:
+            return "missing heartbeat"
+        if self.bad >= 2:
+            return self.phase
+        return None
+
+    def recovered(self, now):
+        self.last_recovery = now
+        self.attempts.append(now)
+        self.bad = 0
+
+
+def watchdog_enabled():
+    return os.path.isfile(WATCHDOG_PATH)
+
+
+def set_watchdog(enabled):
+    if enabled:
+        with WATCHDOG_STATE_LOCK:
+            if not WATCHDOG_STATUS["connected"] or not WATCHDOG_STATUS["last_heartbeat"]:
+                raise BridgeError("Apply the watchdog dashboard first and wait for a live kiosk heartbeat")
+        with open(WATCHDOG_PATH, "w", encoding="utf-8") as handle:
+            handle.write("owner approved\n")
+    elif os.path.exists(WATCHDOG_PATH):
+        os.unlink(WATCHDOG_PATH)
+
+
+def watchdog_guard():
+    # Never interrupt the alarm, doorbell, sleep, maintenance, or a different page.
+    def state(entity):
+        return schlage_api("states/" + entity)
+    prefix = "entryway_fuller_family_kiosk_"
+    if state("switch."+prefix+"screen").get("state") != "on":
+        return False
+    if state("switch."+prefix+"screensaver").get("state") != "off":
+        return False
+    if state("switch."+prefix+"maintenance_mode").get("state") != "off":
+        return False
+    url = state("sensor."+prefix+"current_page").get("state")
+    if url != KIOSK_URL:
+        return False
+    if state("alarm_control_panel.home_alarm").get("state") not in ("disarmed","armed_home","armed_away","armed_night","armed_vacation","armed_custom_bypass"):
+        return False
+    doorbell = state("script.horus_doorbell_live_view")
+    if doorbell.get("state") != "off":
+        return False
+    stamp = doorbell.get("attributes",{}).get("last_triggered")
+    cache = state("button."+prefix+"clear_browser_cache").get("state")
+    for value in (stamp,cache):
+        if value and value not in ("unknown","unavailable"):
+            age = (datetime.datetime.now(datetime.timezone.utc)-datetime.datetime.fromisoformat(value.replace("Z","+00:00"))).total_seconds()
+            if age < 60:
+                return False
+    return True
+
+
+def watchdog_worker():
+    from websockets.sync.client import connect
+    while True:
+        try:
+            token = os.environ.get("SUPERVISOR_TOKEN")
+            if not token:
+                raise BridgeError("Supervisor token unavailable")
+            with connect("ws://supervisor/core/websocket",open_timeout=8,close_timeout=3,max_size=MAX_RESPONSE) as ws:
+                if json.loads(ws.recv(timeout=8)).get("type") != "auth_required":
+                    raise BridgeError("Watchdog challenge failed")
+                ws.send(json.dumps({"type":"auth","access_token":token}))
+                if json.loads(ws.recv(timeout=8)).get("type") != "auth_ok":
+                    raise BridgeError("Watchdog authorization failed")
+                ws.send(json.dumps({"id":1,"type":"subscribe_events","event_type":WATCHDOG_EVENT}))
+                if not json.loads(ws.recv(timeout=8)).get("success"):
+                    raise BridgeError("Watchdog subscription failed")
+                monitor = KioskWatchdog()
+                with WATCHDOG_STATE_LOCK:
+                    WATCHDOG_STATUS.update(connected=True,phase="waiting",last_heartbeat=None)
+                next_check = time.monotonic()
+                while True:
+                    try:
+                        msg = json.loads(ws.recv(timeout=max(.05,min(5,next_check-time.monotonic()))))
+                        event = msg.get("event",{})
+                        data = event.get("data",{})
+                        if event.get("event_type") == WATCHDOG_EVENT and data.get("version") == 1 and monitor.beat(data.get("phase"),time.monotonic()):
+                            with WATCHDOG_STATE_LOCK:
+                                WATCHDOG_STATUS.update(phase=monitor.phase,last_heartbeat=datetime.datetime.now(datetime.timezone.utc).isoformat())
+                    except TimeoutError:
+                        pass
+                    now = time.monotonic()
+                    if now < next_check:
+                        continue
+                    next_check = now + 5
+                    reason = monitor.reason(now)
+                    if reason and watchdog_enabled() and LOCK.acquire(blocking=False):
+                        try:
+                            if watchdog_enabled() and watchdog_guard():
+                                monitor.recovered(now)
+                                ok = refresh_kiosk_after_apply()
+                                with WATCHDOG_STATE_LOCK:
+                                    WATCHDOG_STATUS["last_recovery"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                                    WATCHDOG_STATUS["recoveries"] += 1
+                                LOG.warning("Kiosk watchdog recovery: %s; commands accepted=%s",reason,ok)
+                        except Exception:
+                            LOG.warning("Kiosk watchdog recovery guard failed; no further action")
+                        finally:
+                            LOCK.release()
+        except Exception as exc:
+            with WATCHDOG_STATE_LOCK:
+                WATCHDOG_STATUS.update(connected=False,phase="disconnected",last_heartbeat=None)
+            LOG.warning("Kiosk watchdog connection unavailable: %s",type(exc).__name__)
+            time.sleep(5)
+
+
 def refresh_kiosk_after_apply():
     """Owner-tested full webpage navigation; never exit Fully Kiosk or reboot."""
     token = os.environ.get("SUPERVISOR_TOKEN")
@@ -1116,7 +1262,7 @@ def page(title, content):
 
 
 def form_button(action, label, extra="", danger=False):
-    if action not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable"):
+    if action not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable", "/watchdog-enable", "/watchdog-disable"):
         raise ValueError("Invalid form action")
     return ('<form action="' + html.escape(action.lstrip("/"), quote=True) + '" method="post">'
             '<input type="hidden" name="csrf" value="' + html.escape(CSRF, quote=True) + '">'
@@ -1162,7 +1308,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.11"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.12"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -1207,6 +1353,9 @@ class Handler(BaseHTTPRequestHandler):
                             + restore + '</div>')
             content += '<div class="actions">' + action_link("gallery", "Install Living Gallery artwork", secondary=True) + "</div>"
             content += ('<div class="module"><h2>Schlage fast reporting trial</h2><p>Request a shared account refresh every 10 seconds. Native polling stays enabled. No lock or unlock commands. If cloud reporting fails, disable this trial.</p><div class="actions">' + form_button("/schlage-enable", "Approve &amp; Enable 10-second polling".replace("&amp;", "&")) + form_button("/schlage-disable", "Disable fast polling", danger=True) + "</div></div>")
+            with WATCHDOG_STATE_LOCK:
+                wd = dict(WATCHDOG_STATUS)
+            content += ('<div class="module"><h2>HORUS Kiosk Health</h2><p>Five-second health checks. Status: ' + html.escape(str(wd["phase"])) + ' | Recovery: ' + ("enabled" if watchdog_enabled() else "disabled") + '</p><p>Last heartbeat: ' + html.escape(str(wd["last_heartbeat"] or "not received")) + '<br>Last recovery: ' + html.escape(str(wd["last_recovery"] or "none")) + '<br>Recovery attempts this process: ' + str(wd["recoveries"]) + '</p><div class="actions">' + form_button("/watchdog-enable","Approve & Enable kiosk recovery") + form_button("/watchdog-disable","Disable kiosk recovery",danger=True) + "</div></div>")
             content += ('<p class="muted">Only Fuller Family can be changed. '
                         'A proposal requires your approval before saving.</p>')
             self.show(200, "Dashboard Manager", content)
@@ -1298,7 +1447,7 @@ class Handler(BaseHTTPRequestHandler):
                 detail = str(exc) if isinstance(exc, assets.AssetError) else "Artwork import failed"
                 self.show(409,"Gallery import failed","<p>"+html.escape(detail)+"</p><div class='actions'>"+action_link("gallery","Back")+"</div>")
             return
-        if route.path not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable") or route.query:
+        if route.path not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable", "/watchdog-enable", "/watchdog-disable") or route.query:
             self.show(405, "Not allowed", "<p>No other write operations are supported.</p>")
             return
         try:
@@ -1330,6 +1479,11 @@ class Handler(BaseHTTPRequestHandler):
                     status = set_schlage_polling(route.path == "/schlage-enable")
                     title = "Schlage polling trial"
                     message = "<p>Verified automation state: " + html.escape(status) + ". Default Schlage polling remains available. No door controls changed.</p>"
+                elif route.path in ("/watchdog-enable", "/watchdog-disable"):
+                    enabled = route.path == "/watchdog-enable"
+                    set_watchdog(enabled)
+                    title = "Kiosk watchdog " + ("enabled" if enabled else "disabled")
+                    message = "<p>Camera recovery stays in the dashboard. Full kiosk recovery is " + ("enabled" if enabled else "disabled") + ".</p>"
                 elif route.path == "/apply":
                     sha = data.get("proposal_sha", [""])[0]
                     result = apply_proposal(sha, data.get("asset_hash", [""])[0])
@@ -1464,4 +1618,5 @@ if __name__ == "__main__":
     install_quiet_exit_once()
     install_doorbell_once()
     gallery_curator.start()
+    threading.Thread(target=watchdog_worker,name='horus-kiosk-watchdog',daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", 8099), Handler).serve_forever()

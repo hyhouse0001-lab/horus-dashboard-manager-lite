@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.11", manifest)
+        self.assertIn("version: 0.3.12", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -569,3 +569,51 @@ class SchlagePollTests(unittest.TestCase):
             with self.assertRaises(manager.BridgeError):
                 manager.set_schlage_polling(True)
             api.assert_called_once()
+
+class KioskWatchdogTests(unittest.TestCase):
+    def test_heartbeat_missing_and_cooldown(self):
+        w=manager.KioskWatchdog()
+        self.assertIsNone(w.reason(100))
+        self.assertTrue(w.beat("healthy",100))
+        self.assertIsNone(w.reason(114))
+        self.assertEqual(w.reason(115),"missing heartbeat")
+        w.recovered(115)
+        self.assertIsNone(w.reason(414))
+        self.assertEqual(w.reason(415),"missing heartbeat")
+
+    def test_protected_and_explicit_stale(self):
+        w=manager.KioskWatchdog()
+        w.beat("protected",100)
+        self.assertIsNone(w.reason(1000))
+        w.beat("main_stale",1005)
+        self.assertIsNone(w.reason(1005))
+        w.beat("main_stale",1010)
+        self.assertEqual(w.reason(1010),"main_stale")
+        w.beat("healthy",1015)
+        self.assertIsNone(w.reason(1015))
+
+    def test_hourly_recovery_cap(self):
+        w=manager.KioskWatchdog()
+        w.beat("healthy",1)
+        for now in (20,320,620):
+            w.recovered(now)
+        self.assertIsNone(w.reason(920))
+        self.assertEqual(w.reason(3621),"missing heartbeat")
+
+    def test_invalid_and_duplicate_events(self):
+        w=manager.KioskWatchdog()
+        self.assertFalse(w.beat("invalid",1))
+        self.assertTrue(w.beat("main_stale",5))
+        self.assertFalse(w.beat("main_stale",6))
+        self.assertIsNone(w.reason(6))
+
+    def test_guard_sleep(self):
+        with patch.object(manager,"schlage_api",return_value={"state":"off"}) as api:
+            self.assertFalse(manager.watchdog_guard())
+            api.assert_called_once_with("states/switch.entryway_fuller_family_kiosk_screen")
+
+    def test_no_enable_without_heartbeat(self):
+        with patch.object(manager,"WATCHDOG_STATUS",{"connected":True,"last_heartbeat":None}),patch("builtins.open") as op:
+            with self.assertRaises(manager.BridgeError):
+                manager.set_watchdog(True)
+            op.assert_not_called()
