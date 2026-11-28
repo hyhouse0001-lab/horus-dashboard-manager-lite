@@ -123,7 +123,7 @@ def ha_call(command, *, restore_original=False, **args):
     if command not in ("lovelace/config", "lovelace/config/save"):
         raise BridgeError("Unsupported Home Assistant operation")
     if args.get("url_path") != PATH:
-        raise BridgeError("Only Fuller Family Test may be accessed")
+        raise BridgeError("Only Fuller Family may be accessed")
     if command == "lovelace/config" and set(args) != {"url_path"}:
         raise BridgeError("Invalid dashboard read request")
     if command == "lovelace/config/save" and set(args) != {"url_path", "config"}:
@@ -896,30 +896,29 @@ def compare_dashboard_configs(before, after, compact=True):
 def page(title, content):
     # Zero-JavaScript, CSP-compatible Home Assistant ingress interface.
     style = """*{box-sizing:border-box}
-    :root{color-scheme:dark;--iron:#080807;--batten:#eee9e1;--limestone:#b9afa0;
+    :root{color-scheme:dark;--iron:#000;--batten:#eee9e1;--limestone:#b9afa0;
     --slate:#9a9084;--lantern:#f3b55c;--boxwood:#9dbb97;--signal:#ff927c;
     --hair:rgba(238,233,225,.15);--serif:"Cardo","Iowan Old Style",Georgia,serif;
     --sans:"Fira Sans",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     html{min-height:100%;background:var(--iron)}
     body{isolation:isolate;position:relative;margin:0;min-height:100vh;min-height:100dvh;
     padding:clamp(20px,6vw,64px) clamp(16px,4vw,44px);font:16px/1.55 var(--sans);
-    color:var(--batten);background:radial-gradient(ellipse at 82% 0%,#332316 0%,transparent 52%),
-    radial-gradient(ellipse at 8% 95%,#211b14 0%,transparent 42%),#080807}
+    color:var(--batten);background:radial-gradient(ellipse at 82% 0%,#10100e 0%,transparent 55%),#000}
     body:before,body:after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none}
-    body:before{background:repeating-linear-gradient(115deg,transparent 0 31px,rgba(238,233,225,.018) 32px,transparent 33px 64px);opacity:.65}
-    body:after{background:radial-gradient(ellipse at 62% 15%,rgba(243,181,92,.13),transparent 58%);
-    animation:lantern-drift 14s ease-in-out infinite alternate}
+    body:before{background:radial-gradient(ellipse at 16% 78%,rgba(169,193,201,.065),transparent 40%),radial-gradient(ellipse at 80% 12%,rgba(243,181,92,.10),transparent 36%);animation:atmosphere 22s ease-in-out infinite alternate}
+    body:after{background:radial-gradient(ellipse at 62% 15%,rgba(243,181,92,.10),transparent 46%),radial-gradient(ellipse at 32% 90%,rgba(194,184,228,.04),transparent 40%);
+    animation:lantern-drift 18s ease-in-out infinite alternate}
     main{max-width:860px;margin:0 auto;position:relative;isolation:isolate;overflow:hidden;
     padding:clamp(22px,4vw,44px);border:1px solid var(--hair);border-radius:26px;
-    background:linear-gradient(145deg,rgba(34,29,24,.91),rgba(12,11,10,.96) 62%);
+    background:linear-gradient(145deg,rgba(11,11,11,.90),rgba(1,1,1,.96) 62%);
     box-shadow:0 28px 100px #0009,inset 0 1px 0 rgba(238,233,225,.09);
     animation:arrival .48s cubic-bezier(.2,.75,.25,1) both}
     main:before{content:"";position:absolute;inset:0 12% auto;height:1px;
-    background:linear-gradient(90deg,transparent,var(--lantern),transparent);opacity:.75;pointer-events:none}
+    background:linear-gradient(90deg,transparent,var(--lantern),transparent);opacity:.65;pointer-events:none;animation:edge-breathe 7s ease-in-out infinite alternate}
     .brand{display:flex;align-items:center;gap:20px;margin-bottom:26px;padding-bottom:24px;
     border-bottom:1px solid var(--hair)}
     .mark{position:relative;flex:0 0 68px;width:68px;height:68px;display:grid;place-items:center;
-    border-radius:50%;color:var(--lantern);background:radial-gradient(circle,#2d2116,#0d0b09 72%);
+    border-radius:50%;color:var(--lantern);background:radial-gradient(circle,#15110c,#030303 72%);
     border:1px solid rgba(243,181,92,.48);box-shadow:0 0 38px rgba(243,181,92,.12);
     font:400 33px/1 var(--serif);letter-spacing:-.06em}
     .mark:before,.mark:after{content:"";position:absolute;border-radius:50%;pointer-events:none}
@@ -956,30 +955,35 @@ def page(title, content):
     transition:background .2s,border-color .2s,box-shadow .2s,transform .16s}
     .control:before,button:before{content:"";width:8px;height:8px;border-radius:50%;
     flex:0 0 8px;background:var(--lantern);box-shadow:0 0 12px rgba(243,181,92,.45)}
-    .primary{background:linear-gradient(130deg,#3a2918,#211a12 80%);
+    .primary{background:linear-gradient(130deg,#16120d,#080807 80%);
     border-color:rgba(243,181,92,.42);color:#f6ead7}
-    .secondary{background:linear-gradient(130deg,#25221f,#161513);border-color:rgba(238,233,225,.19)}
+    .secondary{background:linear-gradient(130deg,#151515,#070707);border-color:rgba(238,233,225,.19)}
     .secondary:before{background:var(--limestone);box-shadow:none}
-    .danger{background:linear-gradient(130deg,#3c211c,#231715);border-color:rgba(255,146,124,.46);color:#ffe1d8}
+    .danger{background:linear-gradient(130deg,#1b100e,#080605);border-color:rgba(255,146,124,.46);color:#ffe1d8}
     .danger:before{background:var(--signal);box-shadow:0 0 12px rgba(255,146,124,.25)}
     @media(hover:hover){.control:hover,button:not(:disabled):hover{transform:translateY(-2px);
-    background:#45331f;border-color:var(--lantern);box-shadow:0 9px 26px #0006}
-    .danger:not(:disabled):hover{background:#502d25;border-color:var(--signal)}}
+    background:#211b12;border-color:var(--lantern);box-shadow:0 9px 26px #0006}
+    .danger:not(:disabled):hover{background:#2b1814;border-color:var(--signal)}}
     .control:active,button:not(:disabled):active{transform:scale(.985)}
     .control:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--lantern);outline-offset:4px}
     button:disabled{opacity:.42;cursor:not-allowed;box-shadow:none}
     button:disabled:before{box-shadow:none}
     .module input{color:inherit}
-    details{margin:17px 0;border:1px solid var(--hair);border-radius:12px;background:#100f0d}
+    details{margin:17px 0;border:1px solid var(--hair);border-radius:12px;background:#080808}
     summary{padding:16px 18px;cursor:pointer;color:var(--lantern);font-weight:600}
     details[open] summary{border-bottom:1px solid var(--hair)}details pre{margin:12px}
     pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:55vh;overflow:auto;
-    font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;background:#080807;
+    font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;background:#000;
     color:#ded5c6;border:1px solid var(--hair);padding:16px;border-radius:12px;tab-size:2}
     code{color:#f0c990}a:not(.control){color:var(--lantern)}
     @keyframes arrival{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
     @keyframes orbit{to{transform:rotate(360deg)}}
-    @keyframes lantern-drift{from{opacity:.45;transform:scale(1)}to{opacity:1;transform:scale(1.1)}}
+    @keyframes lantern-drift{from{opacity:.3;transform:translate3d(-3%,0,0) scale(1)}to{opacity:.9;transform:translate3d(4%,2%,0) scale(1.14)}}
+    @keyframes atmosphere{from{opacity:.3;transform:translate3d(-4%,2%,0) scale(1.04)}to{opacity:.85;transform:translate3d(5%,-2%,0) scale(1.16)}}
+    @keyframes edge-breathe{from{opacity:.25}to{opacity:.85}}
+    @keyframes control-arrival{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .actions>*{animation:control-arrival .46s ease-out backwards}
+    .actions>*:nth-child(2){animation-delay:65ms}.actions>*:nth-child(3){animation-delay:130ms}.actions>*:nth-child(4){animation-delay:195ms}
     @media(max-width:520px){.actions{grid-template-columns:1fr;gap:10px}.brand{gap:15px;padding-bottom:19px;margin-bottom:19px}
     .mark{width:54px;height:54px;flex-basis:54px;font-size:28px}
     .control,button{min-height:58px}.module{padding:15px 16px}}
@@ -1046,7 +1050,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 current = read_dashboard()
                 content = ('<div class="module good"><span class="status">CONNECTED</span>'
-                           '<p><strong>FULLER FAMILY TEST</strong></p>'
+                           '<p><strong>FULLER FAMILY</strong></p>'
                            '<p>' + str(len(current["views"])) + ' views available</p></div>'
                            '<div class="actions">' + action_link("./", "Dashboard Manager",
                            secondary=True) + '</div>')
@@ -1063,7 +1067,7 @@ class Handler(BaseHTTPRequestHandler):
                 enabled = False
             state = state_read()
             content = ('<div class="module good"><span class="status">SINGLE DASHBOARD</span>'
-                       '<p><strong>FULLER FAMILY TEST</strong></p></div>')
+                       '<p><strong>FULLER FAMILY</strong></p></div>')
             if not enabled:
                 content += ('<div class="module alert"><h2>Connect Private GitHub</h2>'
                             '<p>Set the GitHub token under the add-on Configuration tab, save, '
@@ -1083,7 +1087,7 @@ class Handler(BaseHTTPRequestHandler):
                             + action_link("preview", "Preview proposed update")
                             + action_link("test", "Test connection", secondary=True)
                             + restore + '</div>')
-            content += ('<p class="muted">Only Fuller Family Test can be changed. '
+            content += ('<p class="muted">Only Fuller Family can be changed. '
                         'A proposal requires your approval before saving.</p>')
             self.show(200, "Dashboard Manager", content)
         elif url.path == "/preview":
@@ -1112,7 +1116,7 @@ class Handler(BaseHTTPRequestHandler):
                                '</div>' +
                                asset_display + '<div class="actions">' + form_button("/apply", "Approve & Apply", extra) + '</div>' +
                                '<div class="actions">' + action_link("./", "Cancel", secondary=True) + '</div>')
-                    self.show(200, "Review Fuller Family Test update", content)
+                    self.show(200, "Review Fuller Family update", content)
                 except MissingControls as exc:
                     self.show(409, "Install Required Controls",
                               "<div class='module alert'><p>" + html.escape(str(exc)) +
@@ -1186,7 +1190,7 @@ class Handler(BaseHTTPRequestHandler):
                     sha = data.get("proposal_sha", [""])[0]
                     result = apply_proposal(sha, data.get("asset_hash", [""])[0])
                     title = "Dashboard updated"
-                    message = ("<p>Fuller Family Test saved and verified with " +
+                    message = ("<p>Fuller Family saved and verified with " +
                                str(result["views"]) + " view(s). Automatic backup created.</p>")
                     if not result["synced"]:
                         message += "<p>GitHub post-deployment sync failed. Use Sync current dashboard.</p>"
