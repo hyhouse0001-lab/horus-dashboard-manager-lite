@@ -8,12 +8,12 @@ import re
 import shutil
 import tempfile
 
-REF = "42ebe9ff95a26abaad57fb5630c1900ea1218b8f"
+REF = "d2eea8c1b66f09efcb7dd51b929a1f2c1de58fa6"
 SOURCE = "home_assistant/custom_components/horus_nanit_insights/"
 FILES = {
-    "manifest.json": ("971a8105ec524117cd3abdb464c4dd16c4c99d32", 288),
-    "model.py": ("ed92e1d92bce559d3800f85340b8b743b8d40f41", 1838),
-    "__init__.py": ("5bb9701e0cb973be92011b325a3c0ea4a4db6296", 3802),
+    "manifest.json": ("9ebaf9f591af3cb6e7cef7c40049dd951f70954e", 288),
+    "model.py": ("772b48a650a6502e267ae664af4dbb857c06d7a9", 1428),
+    "__init__.py": ("7abe7512f7fb4408eebc4f55b94b08576fd11350", 3660),
     "configuration.fragment.yaml": ("6bdba12502907ca798f7490b171325d7015eb041", 40),
 }
 DOMAIN = "horus_nanit_insights"
