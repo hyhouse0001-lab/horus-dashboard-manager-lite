@@ -696,6 +696,7 @@ def preset_scripts():
         ]
     }
 })
+    presets["horus_doorbell_live_view"] = {"alias":"HORUS Doorbell Live View","mode":"single","max_exceeded":"silent","sequence":[{"variables":{"current_page":"{{ states('sensor.entryway_fuller_family_kiosk_current_page') }}","dashboard_prefix":"http://192.168.1.208/fuller-family-test/","doorbell_url":"http://192.168.1.208/fuller-family-test/camera-blink-doorbell-live?horus_kiosk=1&hide_sidebar&kiosk"}},{"condition":"template","value_template":"{{ current_page.startswith(dashboard_prefix) and current_page.split('?')[0] != doorbell_url.split('?')[0] }}"},{"if":[{"condition":"state","entity_id":"switch.entryway_fuller_family_kiosk_screen","state":"off"}],"then":[{"action":"switch.turn_on","target":{"entity_id":"switch.entryway_fuller_family_kiosk_screen"}}]},{"action":"fully_kiosk.load_url","data":{"device_id":"e8969f67449f17aa9e2c94db1e099018","url":"{{ doorbell_url }}"}},{"delay":"00:00:05"}]}
     return presets
 
 
@@ -1255,7 +1256,79 @@ def quiet_exit_config():
             {"condition": "template", "value_template": """{% set v = state_attr('media_player.bedroom_master_bdrm_spot', 'volume_level') %}{{ is_number(v) and v | float > 0.1 }}"""},
             {"condition": "template", "value_template": """{% if trigger is defined and trigger.from_state is not none and trigger.to_state is not none and trigger.from_state.state != trigger.to_state.state and trigger.to_state.state not in ['unknown','unavailable'] %}
 {% set a = trigger.to_state.attributes %}
-{% set cmd = (a.get('voice_command') or '') | string | lower | trim | regex_replace('^alexa[ ,]+', '') | regex_replace('[.!?]+
+{% set cmd = (a.get('voice_command') or '') | string | lower | trim | regex_replace('^alexa[ ,]+', '') | regex_replace('[.!?]+ | trim %}
+{% set intent = (a.get('intent') or '') | string | lower %}
+{{ cmd in ['snooze','snooze alarm','snooze the alarm','snooze my alarm','stop alarm','stop the alarm','stop my alarm','dismiss alarm','dismiss the alarm','dismiss my alarm'] or (cmd == 'stop' and 'alarm' in intent) }}
+{% else %}false{% endif %}"""}
+        ],
+        "actions": [{"action": "media_player.volume_set", "target": {"entity_id": SPOT},
+                     "data": {"volume_level": 0.1}}],
+    }
+
+
+def install_quiet_exit_once():
+    """Create one fixed owner-requested automation; never overwrite or re-create a removed one."""
+    if os.path.exists(QUIET_EXIT_MARKER):
+        return
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return
+    url = "http://supervisor/core/api/config/automation/config/" + QUIET_EXIT_ID
+    headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+    try:
+        try:
+            with urlopen(Request(url, headers=headers), timeout=15) as response:
+                existing = json.loads(response.read(100000))
+            if not isinstance(existing, dict):
+                raise BridgeError("Unexpected automation config")
+            # Preserve any existing automation with this ID, including owner edits.
+        except HTTPError as exc:
+            if exc.code != 404:
+                raise
+            req = Request(url, headers=headers, method="POST",
+                          data=json.dumps(quiet_exit_config()).encode("utf-8"))
+            with urlopen(req, timeout=20) as response:
+                response.read(100000)
+            with urlopen(Request(url, headers=headers), timeout=15) as response:
+                verified = json.loads(response.read(100000))
+            if verified.get("alias") != quiet_exit_config()["alias"]:
+                raise BridgeError("Quiet exit verification failed")
+        with open(QUIET_EXIT_MARKER, "w", encoding="utf-8") as marker:
+            marker.write(QUIET_EXIT_ID)
+        LOG.info("Owner-approved weekday quiet exit automation present")
+    except Exception as exc:
+        LOG.warning("Weekday quiet exit installation not verified: %s", type(exc).__name__)
+
+
+DOORBELL_SCRIPT_ID = "horus_doorbell_live_view"
+DOORBELL_MARKER = "/data/horus_doorbell_live_view.installed"
+
+
+def install_doorbell_once():
+    """Install only the fixed kiosk script; never execute or overwrite it at setup."""
+    if os.path.exists(DOORBELL_MARKER):
+        return
+    try:
+        current = script_request(DOORBELL_SCRIPT_ID)
+        if current is None:
+            script_request(DOORBELL_SCRIPT_ID, "POST", preset_scripts()[DOORBELL_SCRIPT_ID])
+            current = script_request(DOORBELL_SCRIPT_ID)
+            if not isinstance(current, dict):
+                raise BridgeError("Doorbell script was not verified")
+        actual = current.get("config", current) if isinstance(current, dict) else {}
+        expected = preset_scripts()[DOORBELL_SCRIPT_ID]
+        if not isinstance(actual, dict) or any(actual.get(k) != expected[k] for k in ("alias", "mode", "sequence")):
+            raise BridgeError("Existing doorbell script differs; preserved")
+        with open(DOORBELL_MARKER, "w", encoding="utf-8") as marker:
+            marker.write(DOORBELL_SCRIPT_ID)
+    except Exception as exc:
+        LOG.warning("Doorbell script installation not verified: %s", type(exc).__name__)
+
+
+if __name__ == "__main__":
+    LOG.setLevel(logging.INFO)
+    install_quiet_exit_once()
+    install_doorbell_once()
     ThreadingHTTPServer(("0.0.0.0", 8099), Handler).serve_forever()
 , '') | trim %}
 {% set intent = (a.get('intent') or '') | string | lower %}
@@ -1301,7 +1374,33 @@ def install_quiet_exit_once():
         LOG.warning("Weekday quiet exit installation not verified: %s", type(exc).__name__)
 
 
+DOORBELL_SCRIPT_ID = "horus_doorbell_live_view"
+DOORBELL_MARKER = "/data/horus_doorbell_live_view.installed"
+
+
+def install_doorbell_once():
+    """Install only the fixed kiosk script; never execute or overwrite it at setup."""
+    if os.path.exists(DOORBELL_MARKER):
+        return
+    try:
+        current = script_request(DOORBELL_SCRIPT_ID)
+        if current is None:
+            script_request(DOORBELL_SCRIPT_ID, "POST", preset_scripts()[DOORBELL_SCRIPT_ID])
+            current = script_request(DOORBELL_SCRIPT_ID)
+            if not isinstance(current, dict):
+                raise BridgeError("Doorbell script was not verified")
+        actual = current.get("config", current) if isinstance(current, dict) else {}
+        expected = preset_scripts()[DOORBELL_SCRIPT_ID]
+        if not isinstance(actual, dict) or any(actual.get(k) != expected[k] for k in ("alias", "mode", "sequence")):
+            raise BridgeError("Existing doorbell script differs; preserved")
+        with open(DOORBELL_MARKER, "w", encoding="utf-8") as marker:
+            marker.write(DOORBELL_SCRIPT_ID)
+    except Exception as exc:
+        LOG.warning("Doorbell script installation not verified: %s", type(exc).__name__)
+
+
 if __name__ == "__main__":
     LOG.setLevel(logging.INFO)
     install_quiet_exit_once()
+    install_doorbell_once()
     ThreadingHTTPServer(("0.0.0.0", 8099), Handler).serve_forever()

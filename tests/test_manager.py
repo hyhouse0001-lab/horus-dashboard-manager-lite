@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.3", manifest)
+        self.assertIn("version: 0.3.4", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -278,7 +278,7 @@ class DeploymentTests(unittest.TestCase):
 class FamilyControlsTests(unittest.TestCase):
     def test_presets_only_touch_selected_entities(self):
         p = manager.preset_scripts()
-        self.assertEqual(len(p), 19)
+        self.assertEqual(len(p), 20)
         self.assertEqual(p["horus_heru_sleep"]["sequence"][0]["data"]["volume_level"], 0.1)
         self.assertEqual(p["horus_heru_awake"]["sequence"][0]["data"]["volume_level"], 0.7)
         def collect_targets(node):
@@ -458,3 +458,23 @@ class QuietExitTests(unittest.TestCase):
         with patch.object(manager.os.path, "exists", return_value=True), patch.object(manager, "urlopen") as request:
             manager.install_quiet_exit_once()
         request.assert_not_called()
+
+
+class DoorbellLiveViewTests(unittest.TestCase):
+    def test_fixed_kiosk_only(self):
+        cfg = manager.preset_scripts()[manager.DOORBELL_SCRIPT_ID]
+        self.assertEqual(cfg["mode"], "single")
+        self.assertEqual(cfg["sequence"][3], {"action": "fully_kiosk.load_url", "data": {"device_id": "e8969f67449f17aa9e2c94db1e099018", "url": "{{ doorbell_url }}"}})
+        self.assertIn("/camera-blink-doorbell-live?", cfg["sequence"][0]["variables"]["doorbell_url"])
+        self.assertIn("current_page.startswith(dashboard_prefix)", cfg["sequence"][1]["value_template"])
+        self.assertEqual(cfg["sequence"][-1], {"delay": "00:00:05"})
+
+    def test_marker_prevents_reinstall(self):
+        with patch.object(manager.os.path, "exists", return_value=True), patch.object(manager, "script_request") as request:
+            manager.install_doorbell_once()
+        request.assert_not_called()
+
+    def test_existing_different_script_not_overwritten(self):
+        with patch.object(manager.os.path, "exists", return_value=False), patch.object(manager, "script_request", return_value={"alias": "owner script"}) as request:
+            manager.install_doorbell_once()
+        request.assert_called_once_with(manager.DOORBELL_SCRIPT_ID)
