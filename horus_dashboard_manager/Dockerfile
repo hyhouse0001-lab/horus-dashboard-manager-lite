@@ -6,6 +6,7 @@ RUN /opt/horus-venv/bin/pip install --no-cache-dir --only-binary=:all: --require
 COPY manager.py /manager.py
 COPY asset_manager.py /asset_manager.py
 COPY asset_bridge.py /asset_bridge.py
+COPY gallery_import.py /gallery_import.py
 COPY run.sh /run.sh
 RUN chmod 0755 /run.sh
 CMD ["/run.sh"]
