@@ -304,7 +304,8 @@ class FamilyControlsTests(unittest.TestCase):
                                    "climate.guest_bedroom_guest_room_ac",
                                    "media_player.living_room_the_tv_in_the_living_room",
                                    "media_player.living_room_the_tv_in_the_living_room_3",
-                                   "remote.living_room_the_tv_in_the_living_room"})
+                                   "remote.living_room_the_tv_in_the_living_room",
+                                   "switch.entryway_fuller_family_kiosk_screen"})
         self.assertIn(" | min | int", p["horus_nest_temp_up"]["sequence"][0]["data"]["temperature"])
         self.assertIn(" | max | int", p["horus_nest_temp_down"]["sequence"][0]["data"]["temperature"])
         self.assertEqual(p["horus_nest_temp_up"]["sequence"][0]["action"], "climate.set_temperature")
@@ -442,9 +443,6 @@ class ACControlsTests(unittest.TestCase):
 
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class QuietExitTests(unittest.TestCase):
     def test_fixed_scope_and_schedule(self):
@@ -464,6 +462,7 @@ class DoorbellLiveViewTests(unittest.TestCase):
     def test_fixed_kiosk_only(self):
         cfg = manager.preset_scripts()[manager.DOORBELL_SCRIPT_ID]
         self.assertEqual(cfg["mode"], "single")
+        self.assertEqual(cfg["sequence"][2], {"if": [{"condition": "state", "entity_id": "switch.entryway_fuller_family_kiosk_screen", "state": "off"}], "then": [{"action": "switch.turn_on", "target": {"entity_id": "switch.entryway_fuller_family_kiosk_screen"}}]})
         self.assertEqual(cfg["sequence"][3], {"action": "fully_kiosk.load_url", "data": {"device_id": "e8969f67449f17aa9e2c94db1e099018", "url": "{{ doorbell_url }}"}})
         self.assertIn("/camera-blink-doorbell-live?", cfg["sequence"][0]["variables"]["doorbell_url"])
         self.assertIn("current_page.startswith(dashboard_prefix)", cfg["sequence"][1]["value_template"])
@@ -478,3 +477,6 @@ class DoorbellLiveViewTests(unittest.TestCase):
         with patch.object(manager.os.path, "exists", return_value=False), patch.object(manager, "script_request", return_value={"alias": "owner script"}) as request:
             manager.install_doorbell_once()
         request.assert_called_once_with(manager.DOORBELL_SCRIPT_ID)
+
+if __name__ == "__main__":
+    unittest.main()
