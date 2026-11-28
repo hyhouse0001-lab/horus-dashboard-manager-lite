@@ -24,3 +24,9 @@ class GalleryImportTests(unittest.TestCase):
         with self.assertRaises(assets.AssetError): g.validate(b.getvalue())
     def test_bad_csrf_rejected(self):
         with self.assertRaises(assets.AssetError): g.parse_form("text/plain",b"x","secret")
+    def test_binary_upload_roundtrip(self):
+        raw=b"PK\x03\x04\x00\xff\r\n\x90"
+        form=(b'--horus-test\r\nContent-Disposition: form-data; name="csrf"\r\n\r\nsecret\r\n'
+              b'--horus-test\r\nContent-Disposition: form-data; name="artwork"; filename="art.zip"\r\n'
+              b'Content-Type: application/zip\r\n\r\n'+raw+b'\r\n--horus-test--\r\n')
+        self.assertEqual(g.parse_form("multipart/form-data; boundary=horus-test",form,"secret"),raw)
