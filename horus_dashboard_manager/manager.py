@@ -696,7 +696,7 @@ def preset_scripts():
         ]
     }
 })
-    presets["horus_doorbell_live_view"] = {"alias":"HORUS Doorbell Live View","mode":"single","max_exceeded":"silent","sequence":[{"variables":{"current_page":"{{ states('sensor.entryway_fuller_family_kiosk_current_page') }}","dashboard_prefix":"http://192.168.1.208/fuller-family-test/","doorbell_url":"http://192.168.1.208/fuller-family-test/camera-blink-doorbell-live?horus_kiosk=1&hide_sidebar&kiosk"}},{"condition":"template","value_template":"{{ current_page.startswith(dashboard_prefix) and current_page.split('?')[0] != doorbell_url.split('?')[0] }}"},{"if":[{"condition":"state","entity_id":"switch.entryway_fuller_family_kiosk_screen","state":"off"}],"then":[{"action":"switch.turn_on","target":{"entity_id":"switch.entryway_fuller_family_kiosk_screen"}}]},{"action":"fully_kiosk.load_url","data":{"device_id":"e8969f67449f17aa9e2c94db1e099018","url":"{{ doorbell_url }}"}},{"delay":"00:00:05"}]}
+    presets["horus_doorbell_live_view"] = {"alias":"HORUS Doorbell Live View","mode":"single","max_exceeded":"silent","sequence":[{"if":[{"condition":"state","entity_id":"switch.entryway_fuller_family_kiosk_screen","state":"off"}],"then":[{"action":"switch.turn_on","target":{"entity_id":"switch.entryway_fuller_family_kiosk_screen"}}]},{"delay":"00:00:05"}]}
     return presets
 
 
@@ -1301,24 +1301,34 @@ def install_quiet_exit_once():
 
 
 DOORBELL_SCRIPT_ID = "horus_doorbell_live_view"
-DOORBELL_MARKER = "/data/horus_doorbell_live_view.installed"
+DOORBELL_MARKER = "/data/horus_doorbell_live_view.inplace.installed"
+DOORBELL_OLD_MARKER = "/data/horus_doorbell_live_view.installed"
+
+
+def previous_doorbell_config():
+    return {"alias":"HORUS Doorbell Live View","mode":"single","max_exceeded":"silent","sequence":[{"variables":{"current_page":"{{ states('sensor.entryway_fuller_family_kiosk_current_page') }}","dashboard_prefix":"http://192.168.1.208/fuller-family-test/","doorbell_url":"http://192.168.1.208/fuller-family-test/camera-blink-doorbell-live?horus_kiosk=1&hide_sidebar&kiosk"}},{"condition":"template","value_template":"{{ current_page.startswith(dashboard_prefix) and current_page.split('?')[0] != doorbell_url.split('?')[0] }}"},{"if":[{"condition":"state","entity_id":"switch.entryway_fuller_family_kiosk_screen","state":"off"}],"then":[{"action":"switch.turn_on","target":{"entity_id":"switch.entryway_fuller_family_kiosk_screen"}}]},{"action":"fully_kiosk.load_url","data":{"device_id":"e8969f67449f17aa9e2c94db1e099018","url":"{{ doorbell_url }}"}},{"delay":"00:00:05"}]}
 
 
 def install_doorbell_once():
-    """Install only the fixed kiosk script; never execute or overwrite it at setup."""
+    """Preserve the Alexa entity ID; migrate only the exact prior fixed script."""
     if os.path.exists(DOORBELL_MARKER):
         return
     try:
         current = script_request(DOORBELL_SCRIPT_ID)
-        if current is None:
-            script_request(DOORBELL_SCRIPT_ID, "POST", preset_scripts()[DOORBELL_SCRIPT_ID])
-            current = script_request(DOORBELL_SCRIPT_ID)
-            if not isinstance(current, dict):
-                raise BridgeError("Doorbell script was not verified")
-        actual = current.get("config", current) if isinstance(current, dict) else {}
         expected = preset_scripts()[DOORBELL_SCRIPT_ID]
-        if not isinstance(actual, dict) or any(actual.get(k) != expected[k] for k in ("alias", "mode", "sequence")):
+        actual = current.get("config", current) if isinstance(current, dict) else current
+        if current is None:
+            if os.path.exists(DOORBELL_OLD_MARKER):
+                return  # Owner removed it; do not recreate.
+            script_request(DOORBELL_SCRIPT_ID, "POST", expected)
+        elif actual == previous_doorbell_config():
+            script_request(DOORBELL_SCRIPT_ID, "POST", expected)
+        elif actual != expected:
             raise BridgeError("Existing doorbell script differs; preserved")
+        verified = script_request(DOORBELL_SCRIPT_ID)
+        actual = verified.get("config", verified) if isinstance(verified, dict) else None
+        if actual != expected:
+            raise BridgeError("Doorbell migration not verified")
         with open(DOORBELL_MARKER, "w", encoding="utf-8") as marker:
             marker.write(DOORBELL_SCRIPT_ID)
     except Exception as exc:
