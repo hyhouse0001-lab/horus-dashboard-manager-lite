@@ -15,6 +15,7 @@ import logging
 import os
 import secrets
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlsplit
@@ -732,22 +733,30 @@ def helper_command(command, **args):
 
 
 def refresh_kiosk_after_apply():
-    """Fixed kiosk only; failure never invalidates a verified deployment."""
+    """Fixed kiosk only; space cache invalidation and reload; bounded retry."""
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
         return False
-    for action in ("clear_browser_cache", "load_start_url"):
-        req = Request("http://supervisor/core/api/services/button/press",
-                      method="POST",
-                      data=json.dumps({"entity_id": "button.entryway_fuller_family_kiosk_" + action}).encode("utf-8"),
-                      headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
-        try:
-            with urlopen(req, timeout=15) as response:
-                response.read(100000)
-        except Exception:
-            LOG.warning("Post-apply kiosk refresh failed: %s", action)
-            return False
-    return True
+    headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+    def press(action):
+        entity = "button.entryway_fuller_family_kiosk_" + action
+        for attempt in range(2):
+            try:
+                req = Request("http://supervisor/core/api/services/button/press",
+                              method="POST", data=json.dumps({"entity_id": entity}).encode("utf-8"),
+                              headers=headers)
+                with urlopen(req, timeout=15) as response:
+                    response.read(100000)
+                return True
+            except Exception:
+                LOG.warning("Post-apply kiosk refresh failed: %s attempt %d", action, attempt+1)
+                if attempt == 0:
+                    time.sleep(2)
+        return False
+    cleared = press("clear_browser_cache")
+    time.sleep(2)
+    loaded = press("load_start_url")
+    return cleared and loaded
 
 
 def script_request(script_id, method="GET", document=None):
@@ -1066,7 +1075,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.8"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.9"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -1236,9 +1245,9 @@ class Handler(BaseHTTPRequestHandler):
                     message = ("<p>Fuller Family saved and verified with " +
                                str(result["views"]) + " view(s). Automatic backup created.</p>")
                     if refresh_kiosk_after_apply():
-                        message += "<p>Kiosk cache clear and reload requested.</p>"
+                        message += "<p>Kiosk cache clear and reload accepted by Home Assistant (2-second separation).</p>"
                     else:
-                        message += "<p>Dashboard saved; automatic kiosk refresh failed. Refresh manually.</p>"
+                        message += "<p>Dashboard saved; kiosk cache clear or reload failed after retry. Refresh manually.</p>"
                     if not result["synced"]:
                         message += "<p>GitHub post-deployment sync failed. Use Sync current dashboard.</p>"
                 else:

@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.8", manifest)
+        self.assertIn("version: 0.3.9", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -508,3 +508,25 @@ class DoorbellLiveViewTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class KioskRefreshTests(unittest.TestCase):
+    def test_cache_then_pause_then_reload(self):
+        calls=[]
+        def opened(req,timeout):
+            calls.append(json.loads(req.data)["entity_id"])
+            return unittest.mock.MagicMock()
+        with patch.dict(manager.os.environ,{"SUPERVISOR_TOKEN":"test"}), patch.object(manager,"urlopen",side_effect=opened), patch.object(manager.time,"sleep",side_effect=lambda seconds:calls.append(seconds)):
+            self.assertTrue(manager.refresh_kiosk_after_apply())
+        self.assertEqual(calls,["button.entryway_fuller_family_kiosk_clear_browser_cache",2,"button.entryway_fuller_family_kiosk_load_start_url"])
+
+    def test_retry_cache_failure_still_reloads(self):
+        calls=[]
+        def opened(req,timeout):
+            entity=json.loads(req.data)["entity_id"]
+            calls.append(entity)
+            if entity.endswith("clear_browser_cache"):
+                raise OSError("temporary failure")
+            return unittest.mock.MagicMock()
+        with patch.dict(manager.os.environ,{"SUPERVISOR_TOKEN":"test"}), patch.object(manager,"urlopen",side_effect=opened), patch.object(manager.time,"sleep",return_value=None):
+            self.assertFalse(manager.refresh_kiosk_after_apply())
+        self.assertEqual(calls,["button.entryway_fuller_family_kiosk_clear_browser_cache"]*2+["button.entryway_fuller_family_kiosk_load_start_url"])
