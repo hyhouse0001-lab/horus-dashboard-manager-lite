@@ -736,6 +736,82 @@ KIOSK_DEVICE = "e8969f67449f17aa9e2c94db1e099018"
 KIOSK_URL = "http://192.168.1.208/fuller-family-test/kiosk-security?horus_kiosk=1&hide_sidebar&kiosk"
 
 
+SCHLAGE_POLL_ID = "horus_schlage_fast_polling"
+SCHLAGE_POLL_ENTITY = "automation.horus_schlage_fast_polling"
+
+
+def schlage_poll_config():
+    # One front-door refresh updates the shared Schlage account coordinator.
+    # Leave native polling enabled as a fallback; do not send lock commands.
+    return {"alias": "HORUS Schlage Fast Polling",
+            "description": "Owner-approved 10-second Schlage state refresh trial; native polling remains enabled.",
+            "mode": "single", "max_exceeded": "silent",
+            "triggers": [{"trigger": "time_pattern", "seconds": "/10"}],
+            "conditions": [{"condition": "template", "value_template": "{{ states('lock.front_of_house_front_door') not in ['unknown','unavailable'] and states('lock.back_door') not in ['unknown','unavailable'] }}"}],
+            "actions": [{"action": "homeassistant.update_entity",
+                         "target": {"entity_id": "lock.front_of_house_front_door"}}]}
+
+
+def schlage_api(path, method="GET", document=None, missing=False):
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        raise BridgeError("Supervisor token unavailable")
+    req = Request("http://supervisor/core/api/" + path, method=method,
+                  headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+                  data=None if document is None else json.dumps(document).encode("utf-8"))
+    try:
+        with urlopen(req, timeout=20) as response:
+            return json.loads(response.read(100000))
+    except HTTPError as exc:
+        if missing and exc.code == 404:
+            return None
+        raise BridgeError("Schlage trial request failed") from None
+
+
+def schlage_poll_existing():
+    result = schlage_api("config/automation/config/" + SCHLAGE_POLL_ID, missing=True)
+    if result is not None:
+        result = result.get("config", result)
+        # HA may add the ID to the returned document.
+        result = {k:v for k,v in result.items() if k != "id"}
+        if result != schlage_poll_config():
+            raise BridgeError("Existing polling automation differs; preserved")
+    return result
+
+
+def schlage_poll_state():
+    result = schlage_api("states/" + SCHLAGE_POLL_ENTITY, missing=True)
+    if result is not None and result.get("attributes", {}).get("id") != SCHLAGE_POLL_ID:
+        raise BridgeError("Automation entity collision; no changes made")
+    return result.get("state", "unknown") if result else "not installed"
+
+
+def set_schlage_polling(enabled):
+    existing = schlage_poll_existing()
+    current = schlage_poll_state()
+    if not enabled and existing is None:
+        return "not installed"
+    if existing is None:
+        if current != "not installed":
+            raise BridgeError("Automation entity collision; no changes made")
+        schlage_api("config/automation/config/" + SCHLAGE_POLL_ID, "POST", schlage_poll_config())
+        if schlage_poll_existing() is None:
+            raise BridgeError("Polling automation creation not verified")
+    for _ in range(5):
+        current = schlage_poll_state()
+        if current in ("on", "off"):
+            break
+        time.sleep(1)
+    if current not in ("on", "off"):
+        raise BridgeError("Polling automation state unavailable; inspect Home Assistant")
+    desired = "on" if enabled else "off"
+    if current != desired:
+        schlage_api("services/automation/turn_" + desired, "POST", {"entity_id": SCHLAGE_POLL_ENTITY})
+    if schlage_poll_state() != desired:
+        raise BridgeError("Polling automation state not verified")
+    return desired
+
+
 def refresh_kiosk_after_apply():
     """Owner-tested full webpage navigation; never exit Fully Kiosk or reboot."""
     token = os.environ.get("SUPERVISOR_TOKEN")
@@ -1040,7 +1116,7 @@ def page(title, content):
 
 
 def form_button(action, label, extra="", danger=False):
-    if action not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets"):
+    if action not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable"):
         raise ValueError("Invalid form action")
     return ('<form action="' + html.escape(action.lstrip("/"), quote=True) + '" method="post">'
             '<input type="hidden" name="csrf" value="' + html.escape(CSRF, quote=True) + '">'
@@ -1086,7 +1162,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.10"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.11"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -1130,6 +1206,7 @@ class Handler(BaseHTTPRequestHandler):
                             + action_link("test", "Test connection", secondary=True)
                             + restore + '</div>')
             content += '<div class="actions">' + action_link("gallery", "Install Living Gallery artwork", secondary=True) + "</div>"
+            content += ('<div class="module"><h2>Schlage fast reporting trial</h2><p>Request a shared account refresh every 10 seconds. Native polling stays enabled. No lock or unlock commands. If cloud reporting fails, disable this trial.</p><div class="actions">' + form_button("/schlage-enable", "Approve &amp; Enable 10-second polling".replace("&amp;", "&")) + form_button("/schlage-disable", "Disable fast polling", danger=True) + "</div></div>")
             content += ('<p class="muted">Only Fuller Family can be changed. '
                         'A proposal requires your approval before saving.</p>')
             self.show(200, "Dashboard Manager", content)
@@ -1221,7 +1298,7 @@ class Handler(BaseHTTPRequestHandler):
                 detail = str(exc) if isinstance(exc, assets.AssetError) else "Artwork import failed"
                 self.show(409,"Gallery import failed","<p>"+html.escape(detail)+"</p><div class='actions'>"+action_link("gallery","Back")+"</div>")
             return
-        if route.path not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets") or route.query:
+        if route.path not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable") or route.query:
             self.show(405, "Not allowed", "<p>No other write operations are supported.</p>")
             return
         try:
@@ -1249,6 +1326,10 @@ class Handler(BaseHTTPRequestHandler):
                     count = recover_assets()
                     title = "Interrupted update recovered"
                     message = "<p>Verified previous dashboard and assets restored. Views: " + str(count) + ".</p>"
+                elif route.path in ("/schlage-enable", "/schlage-disable"):
+                    status = set_schlage_polling(route.path == "/schlage-enable")
+                    title = "Schlage polling trial"
+                    message = "<p>Verified automation state: " + html.escape(status) + ". Default Schlage polling remains available. No door controls changed.</p>"
                 elif route.path == "/apply":
                     sha = data.get("proposal_sha", [""])[0]
                     result = apply_proposal(sha, data.get("asset_hash", [""])[0])
