@@ -732,18 +732,21 @@ def helper_command(command, **args):
         return result.get("result")
 
 
+KIOSK_DEVICE = "e8969f67449f17aa9e2c94db1e099018"
+KIOSK_URL = "http://192.168.1.208/fuller-family-test/kiosk-security?horus_kiosk=1&hide_sidebar&kiosk"
+
+
 def refresh_kiosk_after_apply():
-    """Fixed kiosk only; space cache invalidation and reload; bounded retry."""
+    """Owner-tested full webpage navigation; never exit Fully Kiosk or reboot."""
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
         return False
     headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
-    def press(action):
-        entity = "button.entryway_fuller_family_kiosk_" + action
+    def service(action, data):
         for attempt in range(2):
             try:
-                req = Request("http://supervisor/core/api/services/button/press",
-                              method="POST", data=json.dumps({"entity_id": entity}).encode("utf-8"),
+                req = Request("http://supervisor/core/api/services/" + action,
+                              method="POST", data=json.dumps(data).encode("utf-8"),
                               headers=headers)
                 with urlopen(req, timeout=15) as response:
                     response.read(100000)
@@ -753,10 +756,18 @@ def refresh_kiosk_after_apply():
                 if attempt == 0:
                     time.sleep(2)
         return False
-    cleared = press("clear_browser_cache")
+    cleared = service("button/press", {"entity_id": "button.entryway_fuller_family_kiosk_clear_browser_cache"})
     time.sleep(2)
-    loaded = press("load_start_url")
-    return cleared and loaded
+    blanked = False
+    returned = False
+    try:
+        blanked = service("fully_kiosk/load_url", {"device_id": KIOSK_DEVICE, "url": "about:blank"})
+        time.sleep(2)
+    finally:
+        returned = service("fully_kiosk/load_url", {"device_id": KIOSK_DEVICE, "url": KIOSK_URL})
+        if not returned:
+            returned = service("button/press", {"entity_id": "button.entryway_fuller_family_kiosk_load_start_url"})
+    return cleared and blanked and returned
 
 
 def script_request(script_id, method="GET", document=None):
@@ -1075,7 +1086,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.9"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.10"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -1245,9 +1256,9 @@ class Handler(BaseHTTPRequestHandler):
                     message = ("<p>Fuller Family saved and verified with " +
                                str(result["views"]) + " view(s). Automatic backup created.</p>")
                     if refresh_kiosk_after_apply():
-                        message += "<p>Kiosk cache clear and reload accepted by Home Assistant (2-second separation).</p>"
+                        message += "<p>Kiosk cache clear, blank-page transition and dashboard reload accepted by Home Assistant.</p>"
                     else:
-                        message += "<p>Dashboard saved; kiosk cache clear or reload failed after retry. Refresh manually.</p>"
+                        message += "<p>Dashboard saved; kiosk refresh incomplete after retry. Check the tablet and reopen the dashboard if needed.</p>"
                     if not result["synced"]:
                         message += "<p>GitHub post-deployment sync failed. Use Sync current dashboard.</p>"
                 else:

@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.9", manifest)
+        self.assertIn("version: 0.3.10", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -510,23 +510,38 @@ if __name__ == "__main__":
     unittest.main()
 
 class KioskRefreshTests(unittest.TestCase):
-    def test_cache_then_pause_then_reload(self):
+    def run_refresh(self, fail=()):
         calls=[]
         def opened(req,timeout):
-            calls.append(json.loads(req.data)["entity_id"])
-            return unittest.mock.MagicMock()
-        with patch.dict(manager.os.environ,{"SUPERVISOR_TOKEN":"test"}), patch.object(manager,"urlopen",side_effect=opened), patch.object(manager.time,"sleep",side_effect=lambda seconds:calls.append(seconds)):
-            self.assertTrue(manager.refresh_kiosk_after_apply())
-        self.assertEqual(calls,["button.entryway_fuller_family_kiosk_clear_browser_cache",2,"button.entryway_fuller_family_kiosk_load_start_url"])
-
-    def test_retry_cache_failure_still_reloads(self):
-        calls=[]
-        def opened(req,timeout):
-            entity=json.loads(req.data)["entity_id"]
-            calls.append(entity)
-            if entity.endswith("clear_browser_cache"):
+            data=json.loads(req.data)
+            action=req.full_url.split("/api/services/")[1]
+            calls.append((action,data))
+            if data.get("url",data.get("entity_id")) in fail:
                 raise OSError("temporary failure")
             return unittest.mock.MagicMock()
-        with patch.dict(manager.os.environ,{"SUPERVISOR_TOKEN":"test"}), patch.object(manager,"urlopen",side_effect=opened), patch.object(manager.time,"sleep",return_value=None):
-            self.assertFalse(manager.refresh_kiosk_after_apply())
-        self.assertEqual(calls,["button.entryway_fuller_family_kiosk_clear_browser_cache"]*2+["button.entryway_fuller_family_kiosk_load_start_url"])
+        with patch.dict(manager.os.environ,{"SUPERVISOR_TOKEN":"test"}), patch.object(manager,"urlopen",side_effect=opened), patch.object(manager.time,"sleep",side_effect=lambda seconds:calls.append(seconds)):
+            result=manager.refresh_kiosk_after_apply()
+        return result,calls
+
+    def test_confirmed_navigation_sequence(self):
+        result,calls=self.run_refresh()
+        self.assertTrue(result)
+        self.assertEqual(calls,[
+            ("button/press",{"entity_id":"button.entryway_fuller_family_kiosk_clear_browser_cache"}),2,
+            ("fully_kiosk/load_url",{"device_id":manager.KIOSK_DEVICE,"url":"about:blank"}),2,
+            ("fully_kiosk/load_url",{"device_id":manager.KIOSK_DEVICE,"url":manager.KIOSK_URL})])
+
+    def test_blank_failure_still_returns_to_dashboard(self):
+        result,calls=self.run_refresh(("about:blank",))
+        self.assertFalse(result)
+        self.assertEqual(calls[-1],("fully_kiosk/load_url",{"device_id":manager.KIOSK_DEVICE,"url":manager.KIOSK_URL}))
+
+    def test_return_failure_falls_back_to_start_url(self):
+        result,calls=self.run_refresh((manager.KIOSK_URL,))
+        self.assertTrue(result)
+        self.assertEqual(calls[-1],("button/press",{"entity_id":"button.entryway_fuller_family_kiosk_load_start_url"}))
+
+    def test_cache_failure_still_returns_to_dashboard(self):
+        result,calls=self.run_refresh(("button.entryway_fuller_family_kiosk_clear_browser_cache",))
+        self.assertFalse(result)
+        self.assertEqual(calls[-1][1]["url"],manager.KIOSK_URL)
