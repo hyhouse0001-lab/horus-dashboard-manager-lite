@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.15", manifest)
+        self.assertIn("version: 0.3.16", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -621,24 +621,9 @@ class KioskWatchdogTests(unittest.TestCase):
 
 
 class MobileRestartTests(unittest.TestCase):
-    def test_mobile_and_shared_assets_trigger_restart(self):
-        before = {"views": [{"path": "iphone", "title": "Old"}, {"path": "kiosk-security"}]}
-        mobile = {"views": [{"path": "iphone", "title": "New"}, {"path": "kiosk-security"}]}
-        kiosk = {"views": [{"path": "iphone", "title": "Old"}, {"path": "kiosk-security", "title": "New"}]}
-        self.assertTrue(manager.mobile_restart_required(before, mobile))
-        self.assertFalse(manager.mobile_restart_required(before, kiosk))
-        self.assertFalse(manager.mobile_restart_required(before, before))
-        self.assertTrue(manager.mobile_restart_required(before, before, {"files": [{"register": True}]}))
-        self.assertFalse(manager.mobile_restart_required(before, before, {"files": [{"register": False}]}))
-
-    def test_restart_single_fixed_service(self):
-        with patch.dict(manager.os.environ, {"SUPERVISOR_TOKEN": "test"}), patch.object(manager, "urlopen", return_value=unittest.mock.MagicMock()) as call:
-            self.assertTrue(manager.request_mobile_core_restart())
-        call.assert_called_once()
-        self.assertTrue(call.call_args.args[0].full_url.endswith("/homeassistant/restart"))
-        self.assertEqual(call.call_args.args[0].data, b"{}")
-
-    def test_restart_failure_is_not_retried(self):
-        with patch.dict(manager.os.environ, {"SUPERVISOR_TOKEN": "test"}), patch.object(manager, "urlopen", side_effect=OSError("disconnected")) as call:
-            self.assertFalse(manager.request_mobile_core_restart())
-        call.assert_called_once()
+    def test_apply_never_requests_core_restart(self):
+        source = (ROOT / "horus_dashboard_manager" / "manager.py").read_text(encoding="utf-8")
+        self.assertNotIn("homeassistant/" + "restart", source)
+        self.assertFalse(hasattr(manager, "request_mobile_core_" + "restart"))
+        self.assertIn("Core stays running", source)
+        self.assertIn("if refresh_kiosk_after_apply():", source)
