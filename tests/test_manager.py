@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.10", manifest)
+        self.assertIn("version: 0.3.11", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -545,3 +545,27 @@ class KioskRefreshTests(unittest.TestCase):
         result,calls=self.run_refresh(("button.entryway_fuller_family_kiosk_clear_browser_cache",))
         self.assertFalse(result)
         self.assertEqual(calls[-1][1]["url"],manager.KIOSK_URL)
+
+class SchlagePollTests(unittest.TestCase):
+    def test_read_only_shared_coordinator(self):
+        cfg=manager.schlage_poll_config()
+        self.assertEqual(cfg["triggers"],[{"trigger":"time_pattern","seconds":"/10"}])
+        self.assertEqual(cfg["actions"],[{"action":"homeassistant.update_entity","target":{"entity_id":"lock.front_of_house_front_door"}}])
+        self.assertEqual(cfg["mode"],"single")
+        self.assertIn("lock.back_door",cfg["conditions"][0]["value_template"])
+
+    def test_create_only_after_approval(self):
+        with patch.object(manager,"schlage_poll_existing",side_effect=[None,manager.schlage_poll_config()]), patch.object(manager,"schlage_poll_state",side_effect=["not installed","on","on"]), patch.object(manager,"schlage_api") as api:
+            self.assertEqual(manager.set_schlage_polling(True),"on")
+            api.assert_called_once_with("config/automation/config/"+manager.SCHLAGE_POLL_ID,"POST",manager.schlage_poll_config())
+
+    def test_disable_does_not_touch_locks(self):
+        with patch.object(manager,"schlage_poll_existing",return_value=manager.schlage_poll_config()), patch.object(manager,"schlage_poll_state",side_effect=["on","on","off"]), patch.object(manager,"schlage_api") as api:
+            self.assertEqual(manager.set_schlage_polling(False),"off")
+            api.assert_called_once_with("services/automation/turn_off","POST",{"entity_id":manager.SCHLAGE_POLL_ENTITY})
+
+    def test_preserve_existing_changed_automation(self):
+        with patch.object(manager,"schlage_api",return_value={"alias":"different"}) as api:
+            with self.assertRaises(manager.BridgeError):
+                manager.set_schlage_polling(True)
+            api.assert_called_once()
