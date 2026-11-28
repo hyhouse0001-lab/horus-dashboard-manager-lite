@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.4", manifest)
+        self.assertIn("version: 0.3.5", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -462,11 +462,21 @@ class DoorbellLiveViewTests(unittest.TestCase):
     def test_fixed_kiosk_only(self):
         cfg = manager.preset_scripts()[manager.DOORBELL_SCRIPT_ID]
         self.assertEqual(cfg["mode"], "single")
-        self.assertEqual(cfg["sequence"][2], {"if": [{"condition": "state", "entity_id": "switch.entryway_fuller_family_kiosk_screen", "state": "off"}], "then": [{"action": "switch.turn_on", "target": {"entity_id": "switch.entryway_fuller_family_kiosk_screen"}}]})
-        self.assertEqual(cfg["sequence"][3], {"action": "fully_kiosk.load_url", "data": {"device_id": "e8969f67449f17aa9e2c94db1e099018", "url": "{{ doorbell_url }}"}})
-        self.assertIn("/camera-blink-doorbell-live?", cfg["sequence"][0]["variables"]["doorbell_url"])
-        self.assertIn("current_page.startswith(dashboard_prefix)", cfg["sequence"][1]["value_template"])
-        self.assertEqual(cfg["sequence"][-1], {"delay": "00:00:05"})
+        self.assertEqual(cfg["sequence"], [
+            {"if": [{"condition": "state", "entity_id": "switch.entryway_fuller_family_kiosk_screen", "state": "off"}], "then": [{"action": "switch.turn_on", "target": {"entity_id": "switch.entryway_fuller_family_kiosk_screen"}}]},
+            {"delay": "00:00:05"}])
+        self.assertNotIn("load_url", json.dumps(cfg))
+
+    def test_exact_legacy_migration_preserves_id(self):
+        expected = manager.preset_scripts()[manager.DOORBELL_SCRIPT_ID]
+        with patch.object(manager.os.path, "exists", return_value=False), patch.object(manager, "script_request", side_effect=[manager.previous_doorbell_config(), {}, expected]) as request, patch("builtins.open"):
+            manager.install_doorbell_once()
+        self.assertEqual(request.call_args_list[1].args, (manager.DOORBELL_SCRIPT_ID, "POST", expected))
+
+    def test_removed_old_script_not_recreated(self):
+        with patch.object(manager.os.path, "exists", side_effect=[False, True]), patch.object(manager, "script_request", return_value=None) as request:
+            manager.install_doorbell_once()
+        request.assert_called_once_with(manager.DOORBELL_SCRIPT_ID)
 
     def test_marker_prevents_reinstall(self):
         with patch.object(manager.os.path, "exists", return_value=True), patch.object(manager, "script_request") as request:
