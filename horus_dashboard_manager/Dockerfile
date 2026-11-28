@@ -7,6 +7,7 @@ COPY manager.py /manager.py
 COPY asset_manager.py /asset_manager.py
 COPY asset_bridge.py /asset_bridge.py
 COPY gallery_import.py /gallery_import.py
+COPY gallery_curator.py /gallery_curator.py
 COPY run.sh /run.sh
 RUN chmod 0755 /run.sh
 CMD ["/run.sh"]
