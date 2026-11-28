@@ -1028,7 +1028,7 @@ def form_button(action, label, extra="", danger=False):
 
 
 def action_link(path, label, secondary=False):
-    if path not in ("test", "preview", "full-diff", "./"):
+    if path not in ("test", "preview", "full-diff", "gallery", "./"):
         raise ValueError("Invalid navigation target")
     return ('<a class="control ' + ("secondary" if secondary else "primary") +
             '" href="' + html.escape(path, quote=True) + '">' +
@@ -1065,7 +1065,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.1"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.7"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:

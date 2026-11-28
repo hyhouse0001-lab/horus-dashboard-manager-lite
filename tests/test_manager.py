@@ -3,7 +3,7 @@ import json
 import pathlib
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "horus_dashboard_manager"))
@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.6", manifest)
+        self.assertIn("version: 0.3.7", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -197,6 +197,24 @@ class ScopeTests(unittest.TestCase):
         html_content = manager.page("Dashboard Manager", preview).decode("utf-8")
         self.assertIn("HORUS / FULLER FAMILY", html_content)
         self.assertIn("radial-gradient", html_content)
+
+    def test_dashboard_home_and_gallery_routes_render(self):
+        handler = manager.Handler.__new__(manager.Handler)
+        handler.allowed = Mock(return_value=True)
+        handler.show = Mock()
+        handler.path = "/"
+        with patch.object(manager, "github_token", return_value="test"), patch.object(manager, "state_read", return_value={}), patch.object(manager.assets, "pending", return_value=False):
+            handler.do_GET()
+        status, title, markup = handler.show.call_args.args
+        self.assertEqual(status, 200)
+        self.assertIn('href="gallery"', markup)
+        handler.path = "/gallery"
+        with patch.object(manager.gallery_import, "count", return_value=5):
+            handler.do_GET()
+        status, title, markup = handler.show.call_args.args
+        self.assertEqual(status, 200)
+        self.assertIn("5 / 5", markup)
+        self.assertIn('action="gallery-import"', markup)
 
     def test_manager_still_rejects_unlisted_navigation(self):
         with self.assertRaises(ValueError):
