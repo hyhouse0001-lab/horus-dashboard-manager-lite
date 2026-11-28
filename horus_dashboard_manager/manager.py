@@ -1263,7 +1263,7 @@ def page(title, content):
 
 
 def form_button(action, label, extra="", danger=False):
-    if action not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable", "/watchdog-enable", "/watchdog-disable"):
+    if action not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable", "/watchdog-enable", "/watchdog-disable", "/nanit-stage"):
         raise ValueError("Invalid form action")
     return ('<form action="' + html.escape(action.lstrip("/"), quote=True) + '" method="post">'
             '<input type="hidden" name="csrf" value="' + html.escape(CSRF, quote=True) + '">'
