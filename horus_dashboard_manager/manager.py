@@ -123,7 +123,7 @@ def ha_call(command, *, restore_original=False, **args):
     if command not in ("lovelace/config", "lovelace/config/save"):
         raise BridgeError("Unsupported Home Assistant operation")
     if args.get("url_path") != PATH:
-        raise BridgeError("Only Fuller Family Test may be accessed")
+        raise BridgeError("Only Fuller Family may be accessed")
     if command == "lovelace/config" and set(args) != {"url_path"}:
         raise BridgeError("Invalid dashboard read request")
     if command == "lovelace/config/save" and set(args) != {"url_path", "config"}:
@@ -895,55 +895,99 @@ def compare_dashboard_configs(before, after, compact=True):
 
 def page(title, content):
     # Zero-JavaScript, CSP-compatible Home Assistant ingress interface.
-    style = """*{box-sizing:border-box}body{font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,
-    "Segoe UI",sans-serif;margin:0;min-height:100vh;padding:clamp(18px,4vw,44px);
-    color:#edf7ff;background:radial-gradient(circle at 75% 0%,#123e68 0%,transparent 42%),
-    linear-gradient(140deg,#08111f 0%,#0d1c30 55%,#06101d 100%)}
-    body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
-    background-image:linear-gradient(rgba(60,112,170,.045) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(60,112,170,.045) 1px,transparent 1px);background-size:46px 46px}
-    main{max-width:940px;margin:0 auto;background:linear-gradient(145deg,#16273d,#0e1a2b);
-    padding:clamp(22px,3vw,36px);border:1px solid #365e81;border-radius:22px;
-    box-shadow:0 18px 70px #020814a8,inset 0 1px 0 #44668855;position:relative;overflow:hidden}
-    main:before{content:"";height:4px;position:absolute;top:0;left:0;right:0;
-    background:linear-gradient(90deg,#61eabc,#5ad5ff 50%,#b7a0fa)}
-    .brand{display:flex;align-items:center;gap:13px;margin-bottom:22px}
-    .mark{width:49px;height:49px;display:grid;place-items:center;border-radius:13px;
-    color:#79eeff;background:#10364d;border:1px solid #55d3f699;
-    box-shadow:0 0 25px #16b6e42c;font-weight:900;font-size:23px;letter-spacing:-3px}
-    .eyebrow{margin:0;color:#68c9eb;letter-spacing:2px;font-size:11px;font-weight:700}
-    h1{font-size:clamp(23px,3vw,31px);line-height:1.18;margin:3px 0 0;letter-spacing:.2px}
-    h2{font-size:14px;letter-spacing:1.5px;text-transform:uppercase;color:#84ddec;margin:0 0 14px}
-    p{margin:13px 0;color:#c9d8e6}.muted{color:#9fb3c8;font-size:13px}
-    strong{color:#eff8ff}.status{display:inline-block;border:1px solid #37677b;
-    color:#96eeff;background:#143247;border-radius:99px;padding:5px 12px;
-    font-size:12px;font-weight:700;letter-spacing:.5px}
-    .module{padding:18px;margin:15px 0;border-radius:16px;border:1px solid #304c66;
-    background:linear-gradient(115deg,#172d46,#14243a 70%)}
-    .module.good{border-color:#3a846e}.module.alert{border-color:#986358}
-    .actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:18px 0}
-    form{margin:0}.actions form{display:block}
+    style = """*{box-sizing:border-box}
+    :root{color-scheme:dark;--iron:#000;--batten:#eee9e1;--limestone:#b9afa0;
+    --slate:#9a9084;--lantern:#f3b55c;--boxwood:#9dbb97;--signal:#ff927c;
+    --hair:rgba(238,233,225,.15);--serif:"Cardo","Iowan Old Style",Georgia,serif;
+    --sans:"Fira Sans",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    html{min-height:100%;background:var(--iron)}
+    body{isolation:isolate;position:relative;margin:0;min-height:100vh;min-height:100dvh;
+    padding:clamp(20px,6vw,64px) clamp(16px,4vw,44px);font:16px/1.55 var(--sans);
+    color:var(--batten);background:radial-gradient(ellipse at 82% 0%,#10100e 0%,transparent 55%),#000}
+    body:before,body:after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none}
+    body:before{background:radial-gradient(ellipse at 16% 78%,rgba(169,193,201,.065),transparent 40%),radial-gradient(ellipse at 80% 12%,rgba(243,181,92,.10),transparent 36%);animation:atmosphere 22s ease-in-out infinite alternate}
+    body:after{background:radial-gradient(ellipse at 62% 15%,rgba(243,181,92,.10),transparent 46%),radial-gradient(ellipse at 32% 90%,rgba(194,184,228,.04),transparent 40%);
+    animation:lantern-drift 18s ease-in-out infinite alternate}
+    main{max-width:860px;margin:0 auto;position:relative;isolation:isolate;overflow:hidden;
+    padding:clamp(22px,4vw,44px);border:1px solid var(--hair);border-radius:26px;
+    background:linear-gradient(145deg,rgba(11,11,11,.90),rgba(1,1,1,.96) 62%);
+    box-shadow:0 28px 100px #0009,inset 0 1px 0 rgba(238,233,225,.09);
+    animation:arrival .48s cubic-bezier(.2,.75,.25,1) both}
+    main:before{content:"";position:absolute;inset:0 12% auto;height:1px;
+    background:linear-gradient(90deg,transparent,var(--lantern),transparent);opacity:.65;pointer-events:none;animation:edge-breathe 7s ease-in-out infinite alternate}
+    .brand{display:flex;align-items:center;gap:20px;margin-bottom:26px;padding-bottom:24px;
+    border-bottom:1px solid var(--hair)}
+    .mark{position:relative;flex:0 0 68px;width:68px;height:68px;display:grid;place-items:center;
+    border-radius:50%;color:var(--lantern);background:radial-gradient(circle,#15110c,#030303 72%);
+    border:1px solid rgba(243,181,92,.48);box-shadow:0 0 38px rgba(243,181,92,.12);
+    font:400 33px/1 var(--serif);letter-spacing:-.06em}
+    .mark:before,.mark:after{content:"";position:absolute;border-radius:50%;pointer-events:none}
+    .mark:before{inset:5px;border:1px solid rgba(243,181,92,.23)}
+    .mark:after{inset:-5px;border:1px solid transparent;border-top-color:var(--lantern);
+    border-right-color:rgba(243,181,92,.17);animation:orbit 18s linear infinite}
+    .brand>div:last-child{min-width:0}
+    .eyebrow{margin:0 0 5px;color:var(--lantern);letter-spacing:.19em;font-size:10px;font-weight:650}
+    h1{font:400 clamp(29px,5vw,44px)/1.08 var(--serif);margin:0;color:var(--batten);
+    letter-spacing:-.025em;overflow-wrap:anywhere}
+    h2{font:400 21px/1.3 var(--serif);color:var(--batten);margin:0 0 12px}
+    p{margin:12px 0;color:var(--limestone);overflow-wrap:anywhere}
+    .muted{color:var(--slate);font-size:13px;line-height:1.55}
+    strong{color:var(--batten);font-weight:650}
+    .status{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(157,187,151,.25);
+    color:var(--boxwood);background:rgba(157,187,151,.06);border-radius:99px;padding:5px 10px;
+    font-size:10px;font-weight:700;letter-spacing:.12em}
+    .status:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;
+    box-shadow:0 0 10px currentColor}
+    .module{padding:18px 20px;margin:16px 0;border-radius:16px;border:1px solid var(--hair);
+    background:linear-gradient(145deg,rgba(238,233,225,.055),rgba(238,233,225,.018))}
+    .module.good{border-left:2px solid var(--boxwood)}
+    .module.good p:last-child{margin-bottom:0}
+    .module.alert{border-color:rgba(255,146,124,.4);border-left:2px solid var(--signal)}
+    .module.alert .status{color:var(--signal);border-color:rgba(255,146,124,.3);background:rgba(255,146,124,.06)}
+    .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}
+    .actions:has(> :only-child){grid-template-columns:1fr}
+    form{margin:0;min-width:0}.actions form{display:block}
     .control,button{display:flex;align-items:center;justify-content:center;text-align:center;
-    gap:12px;min-height:57px;width:100%;padding:14px 17px;border-radius:13px;
-    text-decoration:none;font-size:15px;font-family:inherit;font-weight:750;
-    letter-spacing:.2px;line-height:1.4;cursor:pointer;transition:background .15s,border-color .15s;
-    background:#163e5c;color:#e6faff;border:1px solid #4d93b5;box-shadow:inset 0 1px 0 #ffffff18}
-    .control:hover,button:hover{background:#205375;border-color:#6ae3f1}
-    .control:focus-visible,button:focus-visible{outline:3px solid #77f2dd;outline-offset:3px}
-    .primary{background:linear-gradient(110deg,#125c69,#176882);border-color:#5adbd2;color:#f2ffff}
-    .primary:hover{background:#1b7887}
-    .danger{background:#48232d;border-color:#cb6973;color:#fff0f2}.danger:hover{background:#713340}
-    .secondary{background:#23344d;border-color:#5b7590;color:#edf5ff}
-    .control:before,button:before{content:"";width:8px;height:8px;border-radius:3px;
-    flex:0 0 auto;background:#70e8ee;box-shadow:0 0 12px #70e8ee55}
-    .danger:before{background:#ff8c9c;box-shadow:0 0 12px #f7889a55}
-    button:disabled{opacity:.48;cursor:not-allowed}.module input{color:inherit}
-    details{margin:17px 0;border:1px solid #47617d;border-radius:12px;background:#101d30}summary{padding:16px 18px;cursor:pointer;color:#8de3ed;font-weight:700}details[open] summary{border-bottom:1px solid #385672}details pre{margin:12px}
+    position:relative;gap:12px;min-height:64px;width:100%;padding:16px 14px;border-radius:12px;
+    text-decoration:none;font:600 15px/1.35 var(--sans);letter-spacing:.01em;cursor:pointer;
+    border:1px solid var(--hair);background:rgba(238,233,225,.055);color:var(--batten);
+    box-shadow:inset 0 1px 0 rgba(238,233,225,.07);overflow-wrap:anywhere;
+    transition:background .2s,border-color .2s,box-shadow .2s,transform .16s}
+    .control:before,button:before{content:"";width:8px;height:8px;border-radius:50%;
+    flex:0 0 8px;background:var(--lantern);box-shadow:0 0 12px rgba(243,181,92,.45)}
+    .primary{background:linear-gradient(130deg,#16120d,#080807 80%);
+    border-color:rgba(243,181,92,.42);color:#f6ead7}
+    .secondary{background:linear-gradient(130deg,#151515,#070707);border-color:rgba(238,233,225,.19)}
+    .secondary:before{background:var(--limestone);box-shadow:none}
+    .danger{background:linear-gradient(130deg,#1b100e,#080605);border-color:rgba(255,146,124,.46);color:#ffe1d8}
+    .danger:before{background:var(--signal);box-shadow:0 0 12px rgba(255,146,124,.25)}
+    @media(hover:hover){.control:hover,button:not(:disabled):hover{transform:translateY(-2px);
+    background:#211b12;border-color:var(--lantern);box-shadow:0 9px 26px #0006}
+    .danger:not(:disabled):hover{background:#2b1814;border-color:var(--signal)}}
+    .control:active,button:not(:disabled):active{transform:scale(.985)}
+    .control:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--lantern);outline-offset:4px}
+    button:disabled{opacity:.42;cursor:not-allowed;box-shadow:none}
+    button:disabled:before{box-shadow:none}
+    .module input{color:inherit}
+    details{margin:17px 0;border:1px solid var(--hair);border-radius:12px;background:#080808}
+    summary{padding:16px 18px;cursor:pointer;color:var(--lantern);font-weight:600}
+    details[open] summary{border-bottom:1px solid var(--hair)}details pre{margin:12px}
     pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:55vh;overflow:auto;
-    font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#071322;
-    color:#cbe7fb;border:1px solid #42607a;padding:17px;border-radius:12px}
-    code{color:#97eafe}a:not(.control){color:#83d9ff}
-    @media(max-width:520px){.actions{grid-template-columns:1fr}.brand{align-items:flex-start}}
+    font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;background:#000;
+    color:#ded5c6;border:1px solid var(--hair);padding:16px;border-radius:12px;tab-size:2}
+    code{color:#f0c990}a:not(.control){color:var(--lantern)}
+    @keyframes arrival{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes orbit{to{transform:rotate(360deg)}}
+    @keyframes lantern-drift{from{opacity:.3;transform:translate3d(-3%,0,0) scale(1)}to{opacity:.9;transform:translate3d(4%,2%,0) scale(1.14)}}
+    @keyframes atmosphere{from{opacity:.3;transform:translate3d(-4%,2%,0) scale(1.04)}to{opacity:.85;transform:translate3d(5%,-2%,0) scale(1.16)}}
+    @keyframes edge-breathe{from{opacity:.25}to{opacity:.85}}
+    @keyframes control-arrival{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .actions>*{animation:control-arrival .46s ease-out backwards}
+    .actions>*:nth-child(2){animation-delay:65ms}.actions>*:nth-child(3){animation-delay:130ms}.actions>*:nth-child(4){animation-delay:195ms}
+    @media(max-width:520px){.actions{grid-template-columns:1fr;gap:10px}.brand{gap:15px;padding-bottom:19px;margin-bottom:19px}
+    .mark{width:54px;height:54px;flex-basis:54px;font-size:28px}
+    .control,button{min-height:58px}.module{padding:15px 16px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
     """
     body = ('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
             '<meta charset="utf-8"><title>' + html.escape(title) + '</title>'
@@ -1000,13 +1044,13 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.0"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.1"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
                 current = read_dashboard()
                 content = ('<div class="module good"><span class="status">CONNECTED</span>'
-                           '<p><strong>FULLER FAMILY TEST</strong></p>'
+                           '<p><strong>FULLER FAMILY</strong></p>'
                            '<p>' + str(len(current["views"])) + ' views available</p></div>'
                            '<div class="actions">' + action_link("./", "Dashboard Manager",
                            secondary=True) + '</div>')
@@ -1023,7 +1067,7 @@ class Handler(BaseHTTPRequestHandler):
                 enabled = False
             state = state_read()
             content = ('<div class="module good"><span class="status">SINGLE DASHBOARD</span>'
-                       '<p><strong>FULLER FAMILY TEST</strong></p></div>')
+                       '<p><strong>FULLER FAMILY</strong></p></div>')
             if not enabled:
                 content += ('<div class="module alert"><h2>Connect Private GitHub</h2>'
                             '<p>Set the GitHub token under the add-on Configuration tab, save, '
@@ -1043,7 +1087,7 @@ class Handler(BaseHTTPRequestHandler):
                             + action_link("preview", "Preview proposed update")
                             + action_link("test", "Test connection", secondary=True)
                             + restore + '</div>')
-            content += ('<p class="muted">Only Fuller Family Test can be changed. '
+            content += ('<p class="muted">Only Fuller Family can be changed. '
                         'A proposal requires your approval before saving.</p>')
             self.show(200, "Dashboard Manager", content)
         elif url.path == "/preview":
@@ -1072,7 +1116,7 @@ class Handler(BaseHTTPRequestHandler):
                                '</div>' +
                                asset_display + '<div class="actions">' + form_button("/apply", "Approve & Apply", extra) + '</div>' +
                                '<div class="actions">' + action_link("./", "Cancel", secondary=True) + '</div>')
-                    self.show(200, "Review Fuller Family Test update", content)
+                    self.show(200, "Review Fuller Family update", content)
                 except MissingControls as exc:
                     self.show(409, "Install Required Controls",
                               "<div class='module alert'><p>" + html.escape(str(exc)) +
@@ -1146,7 +1190,7 @@ class Handler(BaseHTTPRequestHandler):
                     sha = data.get("proposal_sha", [""])[0]
                     result = apply_proposal(sha, data.get("asset_hash", [""])[0])
                     title = "Dashboard updated"
-                    message = ("<p>Fuller Family Test saved and verified with " +
+                    message = ("<p>Fuller Family saved and verified with " +
                                str(result["views"]) + " view(s). Automatic backup created.</p>")
                     if not result["synced"]:
                         message += "<p>GitHub post-deployment sync failed. Use Sync current dashboard.</p>"
