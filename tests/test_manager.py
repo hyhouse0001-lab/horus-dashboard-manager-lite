@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.14", manifest)
+        self.assertIn("version: 0.3.15", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -207,6 +207,7 @@ class ScopeTests(unittest.TestCase):
             handler.do_GET()
         status, title, markup = handler.show.call_args.args
         self.assertEqual(status, 200)
+        self.assertIn('<details class="module"><summary>Advanced setup &amp; maintenance</summary>', markup)
         self.assertIn('href="gallery"', markup)
         handler.path = "/gallery"
         with patch.object(manager.gallery_import, "count", return_value=5):
@@ -617,3 +618,27 @@ class KioskWatchdogTests(unittest.TestCase):
             with self.assertRaises(manager.BridgeError):
                 manager.set_watchdog(True)
             op.assert_not_called()
+
+
+class MobileRestartTests(unittest.TestCase):
+    def test_mobile_and_shared_assets_trigger_restart(self):
+        before = {"views": [{"path": "iphone", "title": "Old"}, {"path": "kiosk-security"}]}
+        mobile = {"views": [{"path": "iphone", "title": "New"}, {"path": "kiosk-security"}]}
+        kiosk = {"views": [{"path": "iphone", "title": "Old"}, {"path": "kiosk-security", "title": "New"}]}
+        self.assertTrue(manager.mobile_restart_required(before, mobile))
+        self.assertFalse(manager.mobile_restart_required(before, kiosk))
+        self.assertFalse(manager.mobile_restart_required(before, before))
+        self.assertTrue(manager.mobile_restart_required(before, before, {"files": [{"register": True}]}))
+        self.assertFalse(manager.mobile_restart_required(before, before, {"files": [{"register": False}]}))
+
+    def test_restart_single_fixed_service(self):
+        with patch.dict(manager.os.environ, {"SUPERVISOR_TOKEN": "test"}), patch.object(manager, "urlopen", return_value=unittest.mock.MagicMock()) as call:
+            self.assertTrue(manager.request_mobile_core_restart())
+        call.assert_called_once()
+        self.assertTrue(call.call_args.args[0].full_url.endswith("/homeassistant/restart"))
+        self.assertEqual(call.call_args.args[0].data, b"{}")
+
+    def test_restart_failure_is_not_retried(self):
+        with patch.dict(manager.os.environ, {"SUPERVISOR_TOKEN": "test"}), patch.object(manager, "urlopen", side_effect=OSError("disconnected")) as call:
+            self.assertFalse(manager.request_mobile_core_restart())
+        call.assert_called_once()
