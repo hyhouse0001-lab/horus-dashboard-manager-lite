@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import asset_manager as assets
 import asset_bridge
 import gallery_import
+import gallery_curator
 from urllib.request import Request, urlopen
 
 PATH = "fuller-family-test"
@@ -1065,7 +1066,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.7"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.8"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -1361,4 +1362,5 @@ if __name__ == "__main__":
     LOG.setLevel(logging.INFO)
     install_quiet_exit_once()
     install_doorbell_once()
+    gallery_curator.start()
     ThreadingHTTPServer(("0.0.0.0", 8099), Handler).serve_forever()
