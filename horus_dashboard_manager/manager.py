@@ -23,6 +23,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import asset_manager as assets
 import asset_bridge
+import gallery_import
 from urllib.request import Request, urlopen
 
 PATH = "fuller-family-test"
@@ -1107,9 +1108,16 @@ class Handler(BaseHTTPRequestHandler):
                             + action_link("preview", "Preview proposed update")
                             + action_link("test", "Test connection", secondary=True)
                             + restore + '</div>')
+            content += '<div class="actions">' + action_link("gallery", "Install Living Gallery artwork", secondary=True) + "</div>"
             content += ('<p class="muted">Only Fuller Family can be changed. '
                         'A proposal requires your approval before saving.</p>')
             self.show(200, "Dashboard Manager", content)
+        elif url.path == "/gallery":
+            try:
+                verified = gallery_import.count()
+                self.show(200, "Private Living Gallery", "<p>Verified artwork: " + str(verified) + " / 5. Upload the approved Collection 001 ZIP. Images stay on your HA Green.</p>" + '<form method="post" action="gallery-import" enctype="multipart/form-data"><input type="hidden" name="csrf" value="' + html.escape(CSRF, quote=True) + '"><input required type="file" name="artwork" accept=".zip"><button type="submit">Install Collection 001</button></form><div class="actions">' + action_link("./", "Back") + "</div>")
+            except assets.AssetError as exc:
+                self.show(409, "Gallery unavailable", "<p>" + html.escape(str(exc)) + "</p>")
         elif url.path == "/preview":
             with LOCK:
                 try:
@@ -1178,6 +1186,20 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return
         route = urlsplit(self.path)
+        if route.path == "/gallery-import" and not route.query and not route.fragment:
+            try:
+                size = int(self.headers.get("Content-Length","0"))
+                if not 1 <= size <= gallery_import.MAX_BYTES + 8192:
+                    raise assets.AssetError("Invalid artwork upload size")
+                self.connection.settimeout(30)
+                raw = gallery_import.parse_form(self.headers.get("Content-Type",""), self.rfile.read(size), CSRF)
+                with LOCK:
+                    count = gallery_import.install(raw)
+                self.show(200,"Collection installed","<p>Verified " + str(count) + " / 5 paintings locally. Preview the gallery dashboard update.</p><div class='actions'>" + action_link("preview","Preview dashboard update") + "</div>")
+            except Exception as exc:
+                detail = str(exc) if isinstance(exc, assets.AssetError) else "Artwork import failed"
+                self.show(409,"Gallery import failed","<p>"+html.escape(detail)+"</p><div class='actions'>"+action_link("gallery","Back")+"</div>")
+            return
         if route.path not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets") or route.query:
             self.show(405, "Not allowed", "<p>No other write operations are supported.</p>")
             return
