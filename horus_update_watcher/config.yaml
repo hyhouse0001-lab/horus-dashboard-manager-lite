@@ -1,7 +1,7 @@
 name: HORUS Update Watcher
-version: 0.1.0
+version: 0.1.1
 slug: horus_update_watcher
-description: 15-second GitHub release checks and CI-gated updates of HORUS Dashboard Manager only
+description: CI-gated App Store refresh for Horus DBM; manual installation
 url: https://github.com/hyhouse0001-lab/horus-dashboard-manager-lite
 arch:
   - aarch64
