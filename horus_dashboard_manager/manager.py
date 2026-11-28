@@ -318,6 +318,35 @@ def state_write(info):
     os.replace(temporary, STATE_PATH)
 
 
+def mobile_restart_required(before, target, manifest=None):
+    """Mobile views and shared registered frontend assets affect Companion clients."""
+    def mobile_views(config):
+        return {v.get("path"): v for v in config["views"]
+                if isinstance(v.get("path"), str) and
+                (v["path"] in ("iphone", "ipad", "lantern-home") or
+                 v["path"].startswith(("mobile-", "lantern-mobile-")))}
+    return (mobile_views(before) != mobile_views(target) or
+            any(item.get("register") is True for item in (manifest or {}).get("files", [])))
+
+
+def request_mobile_core_restart():
+    """One fixed Core restart request; never retry an ambiguous restart."""
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return False
+    try:
+        req = Request("http://supervisor/core/api/services/homeassistant/restart",
+                      method="POST", data=b"{}",
+                      headers={"Authorization": "Bearer " + token,
+                               "Content-Type": "application/json"})
+        with urlopen(req, timeout=15) as response:
+            response.read(100000)
+        return True
+    except Exception:
+        LOG.warning("Post-apply Core restart could not be confirmed; no retry")
+        return False
+
+
 def apply_proposal(requested_sha, requested_assets=None):
     proposal, sha = load_proposal()
     if not isinstance(requested_sha, str) or not hmac.compare_digest(sha, requested_sha):
@@ -375,7 +404,8 @@ def apply_proposal(requested_sha, requested_assets=None):
     except Exception:
         LOG.warning("Dashboard saved, but post-apply GitHub sync failed")
         synced = False
-    return {"views": len(actual["views"]), "backup": name, "synced": synced}
+    return {"views": len(actual["views"]), "backup": name, "synced": synced,
+            "mobile_restart": mobile_restart_required(before, actual, proposal.get("assets"))}
 
 
 def recover_assets():
@@ -1309,7 +1339,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.14"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.15"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -1352,13 +1382,14 @@ class Handler(BaseHTTPRequestHandler):
                             + action_link("preview", "Preview proposed update")
                             + action_link("test", "Test connection", secondary=True)
                             + restore + '</div>')
-            content += '<div class="actions">' + action_link("gallery", "Install Living Gallery artwork", secondary=True) + "</div>"
+            content += '<details class="module"><summary>Advanced setup &amp; maintenance</summary><div class="actions">' + action_link("gallery", "Install Living Gallery artwork", secondary=True) + "</div>"
             content += ('<div class="module"><h2>Schlage fast reporting trial</h2><p>Request a shared account refresh every 10 seconds. Native polling stays enabled. No lock or unlock commands. If cloud reporting fails, disable this trial.</p><div class="actions">' + form_button("/schlage-enable", "Approve &amp; Enable 10-second polling".replace("&amp;", "&")) + form_button("/schlage-disable", "Disable fast polling", danger=True) + "</div></div>")
             with WATCHDOG_STATE_LOCK:
                 wd = dict(WATCHDOG_STATUS)
             content += ('<div class="module"><h2>HORUS Kiosk Health</h2><p>Five-second health checks. Status: ' + html.escape(str(wd["phase"])) + ' | Recovery: ' + ("enabled" if watchdog_enabled() else "disabled") + '</p><p>Last heartbeat: ' + html.escape(str(wd["last_heartbeat"] or "not received")) + '<br>Last recovery: ' + html.escape(str(wd["last_recovery"] or "none")) + '<br>Recovery attempts this process: ' + str(wd["recoveries"]) + '</p><div class="actions">' + form_button("/watchdog-enable","Approve & Enable kiosk recovery") + form_button("/watchdog-disable","Disable kiosk recovery",danger=True) + "</div></div>")
             if enabled:
                 content += ('<div class="module"><h2>Nanit Insights candidate</h2><p>Stage the pinned read-only companion in Core configuration. This does not restart Core or change the dashboard. Configuration validation and a separately approved restart are required.</p><div class="actions">' + form_button("/nanit-stage", "Approve & Stage Nanit companion") + "</div></div>")
+            content += "</details>"
             content += ('<p class="muted">Only Fuller Family can be changed. '
                         'A proposal requires your approval before saving.</p>')
             self.show(200, "Dashboard Manager", content)
@@ -1382,7 +1413,8 @@ class Handler(BaseHTTPRequestHandler):
                     extra = ('<input type="hidden" name="proposal_sha" value="' +
                              html.escape(sha, quote=True) + '">')
                     extra += '<input type="hidden" name="asset_hash" value="' + html.escape(asset_hash, quote=True) + '">'
-                    content = ('<p><strong>Change:</strong> ' + html.escape(proposed["summary"]) + '</p>'
+                    restart_notice = ('<p>Mobile or shared frontend update: approval also authorizes one Home Assistant Core restart after successful deployment. This briefly interrupts automations and does not erase the iOS app cache.</p>' if mobile_restart_required(live, proposed["config"], proposed.get("assets")) else "")
+                    content = ('<p><strong>Change:</strong> ' + html.escape(proposed["summary"]) + '</p>' + restart_notice +
                                '<p>Current views: ' + str(len(live["views"])) +
                                ' | Proposed views: ' + str(len(proposed["config"]["views"])) + '</p>'
                                '<details><summary>Review changes (embedded graphics summarized by SHA-256)</summary><pre>' +
@@ -1503,6 +1535,11 @@ class Handler(BaseHTTPRequestHandler):
                         message += "<p>Dashboard saved; kiosk refresh incomplete after retry. Check the tablet and reopen the dashboard if needed.</p>"
                     if not result["synced"]:
                         message += "<p>GitHub post-deployment sync failed. Use Sync current dashboard.</p>"
+                    if result["mobile_restart"]:
+                        if request_mobile_core_restart():
+                            message += "<p>Home Assistant Core restart accepted for mobile/shared update. Reopen the Companion app if needed.</p>"
+                        else:
+                            message += "<p>Dashboard saved; Core restart not confirmed. Check Home Assistant before retrying manually.</p>"
                 else:
                     result = rollback_last()
                     title = "Dashboard restored"
