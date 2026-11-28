@@ -26,6 +26,7 @@ import asset_manager as assets
 import asset_bridge
 import gallery_import
 import gallery_curator
+import nanit_install
 from urllib.request import Request, urlopen
 
 PATH = "fuller-family-test"
@@ -1262,7 +1263,7 @@ def page(title, content):
 
 
 def form_button(action, label, extra="", danger=False):
-    if action not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable", "/watchdog-enable", "/watchdog-disable"):
+    if action not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable", "/watchdog-enable", "/watchdog-disable", "/nanit-stage"):
         raise ValueError("Invalid form action")
     return ('<form action="' + html.escape(action.lstrip("/"), quote=True) + '" method="post">'
             '<input type="hidden" name="csrf" value="' + html.escape(CSRF, quote=True) + '">'
@@ -1308,7 +1309,7 @@ class Handler(BaseHTTPRequestHandler):
             self.show(400, "Invalid request", "<p>Query parameters are not supported.</p>")
             return
         if url.path == "/health":
-            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.12"}
+            info = {"status": "running", "mode": "single-dashboard", "target": PATH, "version": "0.3.13"}
             self.respond(200, json.dumps(info).encode("utf-8"), "application/json")
         elif url.path == "/test":
             try:
@@ -1356,6 +1357,8 @@ class Handler(BaseHTTPRequestHandler):
             with WATCHDOG_STATE_LOCK:
                 wd = dict(WATCHDOG_STATUS)
             content += ('<div class="module"><h2>HORUS Kiosk Health</h2><p>Five-second health checks. Status: ' + html.escape(str(wd["phase"])) + ' | Recovery: ' + ("enabled" if watchdog_enabled() else "disabled") + '</p><p>Last heartbeat: ' + html.escape(str(wd["last_heartbeat"] or "not received")) + '<br>Last recovery: ' + html.escape(str(wd["last_recovery"] or "none")) + '<br>Recovery attempts this process: ' + str(wd["recoveries"]) + '</p><div class="actions">' + form_button("/watchdog-enable","Approve & Enable kiosk recovery") + form_button("/watchdog-disable","Disable kiosk recovery",danger=True) + "</div></div>")
+            if enabled:
+                content += ('<div class="module"><h2>Nanit Insights candidate</h2><p>Stage the pinned read-only companion in Core configuration. This does not restart Core or change the dashboard. Configuration validation and a separately approved restart are required.</p><div class="actions">' + form_button("/nanit-stage", "Approve & Stage Nanit companion") + "</div></div>")
             content += ('<p class="muted">Only Fuller Family can be changed. '
                         'A proposal requires your approval before saving.</p>')
             self.show(200, "Dashboard Manager", content)
@@ -1447,7 +1450,7 @@ class Handler(BaseHTTPRequestHandler):
                 detail = str(exc) if isinstance(exc, assets.AssetError) else "Artwork import failed"
                 self.show(409,"Gallery import failed","<p>"+html.escape(detail)+"</p><div class='actions'>"+action_link("gallery","Back")+"</div>")
             return
-        if route.path not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable", "/watchdog-enable", "/watchdog-disable") or route.query:
+        if route.path not in ("/sync", "/apply", "/rollback", "/setup-household", "/recover-assets", "/schlage-enable", "/schlage-disable", "/watchdog-enable", "/watchdog-disable", "/nanit-stage") or route.query:
             self.show(405, "Not allowed", "<p>No other write operations are supported.</p>")
             return
         try:
@@ -1465,6 +1468,10 @@ class Handler(BaseHTTPRequestHandler):
                     message = ("<p>Current dashboard safely copied to the private GitHub repository. "
                                "Views: " + str(result["views"]) + ".</p>"
                                "<p>ChatGPT can now read the snapshot and prepare a proposal.</p>")
+                elif route.path == "/nanit-stage":
+                    status = nanit_install.stage(github_request)
+                    title = "Nanit companion staged"
+                    message = "<p>" + html.escape(status) + "</p>"
                 elif route.path == "/setup-household":
                     count = install_family_controls()
                     title = "Family Controls Ready"
