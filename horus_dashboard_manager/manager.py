@@ -728,6 +728,25 @@ def helper_command(command, **args):
         return result.get("result")
 
 
+def refresh_kiosk_after_apply():
+    """Fixed kiosk only; failure never invalidates a verified deployment."""
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return False
+    for action in ("clear_browser_cache", "load_start_url"):
+        req = Request("http://supervisor/core/api/services/button/press",
+                      method="POST",
+                      data=json.dumps({"entity_id": "button.entryway_fuller_family_kiosk_" + action}).encode("utf-8"),
+                      headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        try:
+            with urlopen(req, timeout=15) as response:
+                response.read(100000)
+        except Exception:
+            LOG.warning("Post-apply kiosk refresh failed: %s", action)
+            return False
+    return True
+
+
 def script_request(script_id, method="GET", document=None):
     if script_id not in preset_scripts() or method not in ("GET", "POST"):
         raise BridgeError("Unapproved script operation")
@@ -1192,6 +1211,10 @@ class Handler(BaseHTTPRequestHandler):
                     title = "Dashboard updated"
                     message = ("<p>Fuller Family saved and verified with " +
                                str(result["views"]) + " view(s). Automatic backup created.</p>")
+                    if refresh_kiosk_after_apply():
+                        message += "<p>Kiosk cache clear and reload requested.</p>"
+                    else:
+                        message += "<p>Dashboard saved; automatic kiosk refresh failed. Refresh manually.</p>"
                     if not result["synced"]:
                         message += "<p>GitHub post-deployment sync failed. Use Sync current dashboard.</p>"
                 else:
