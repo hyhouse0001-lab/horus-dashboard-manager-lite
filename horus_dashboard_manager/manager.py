@@ -1237,6 +1237,71 @@ class Handler(BaseHTTPRequestHandler):
     do_DELETE = do_PUT
 
 
+QUIET_EXIT_ID = "horus_weekday_quiet_exit_0531"
+QUIET_EXIT_MARKER = "/data/horus_weekday_quiet_exit_0531.installed"
+QUIET_EXIT_VOICE = "event.bedroom_master_bdrm_spot_voice_event"
+
+
+def quiet_exit_config():
+    return {
+        "alias": "HORUS Weekday Quiet Exit",
+        "description": "Owner-approved: after the final 05:31 alarm, respond to a reported alarm snooze or dismissal only while Heru sleep mode is on.",
+        "mode": "single",
+        "triggers": [{"trigger": "state", "entity_id": QUIET_EXIT_VOICE, "to": None}],
+        "conditions": [
+            {"condition": "time", "after": "05:31:00", "before": "06:30:00",
+             "weekday": ["mon", "tue", "wed", "thu", "fri"]},
+            {"condition": "state", "entity_id": SLEEP_HELPER, "state": "on"},
+            {"condition": "template", "value_template": """{% set v = state_attr('media_player.bedroom_master_bdrm_spot', 'volume_level') %}{{ is_number(v) and v | float > 0.1 }}"""},
+            {"condition": "template", "value_template": """{% if trigger is defined and trigger.from_state is not none and trigger.to_state is not none and trigger.from_state.state != trigger.to_state.state and trigger.to_state.state not in ['unknown','unavailable'] %}
+{% set a = trigger.to_state.attributes %}
+{% set cmd = (a.get('voice_command') or '') | string | lower | trim | regex_replace('^alexa[ ,]+', '') | regex_replace('[.!?]+
+    ThreadingHTTPServer(("0.0.0.0", 8099), Handler).serve_forever()
+, '') | trim %}
+{% set intent = (a.get('intent') or '') | string | lower %}
+{{ cmd in ['snooze','snooze alarm','snooze the alarm','snooze my alarm','stop alarm','stop the alarm','stop my alarm','dismiss alarm','dismiss the alarm','dismiss my alarm'] or (cmd == 'stop' and 'alarm' in intent) }}
+{% else %}false{% endif %}"""}
+        ],
+        "actions": [{"action": "media_player.volume_set", "target": {"entity_id": SPOT},
+                     "data": {"volume_level": 0.1}}],
+    }
+
+
+def install_quiet_exit_once():
+    """Create one fixed owner-requested automation; never overwrite or re-create a removed one."""
+    if os.path.exists(QUIET_EXIT_MARKER):
+        return
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return
+    url = "http://supervisor/core/api/config/automation/config/" + QUIET_EXIT_ID
+    headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+    try:
+        try:
+            with urlopen(Request(url, headers=headers), timeout=15) as response:
+                existing = json.loads(response.read(100000))
+            if not isinstance(existing, dict):
+                raise BridgeError("Unexpected automation config")
+            # Preserve any existing automation with this ID, including owner edits.
+        except HTTPError as exc:
+            if exc.code != 404:
+                raise
+            req = Request(url, headers=headers, method="POST",
+                          data=json.dumps(quiet_exit_config()).encode("utf-8"))
+            with urlopen(req, timeout=20) as response:
+                response.read(100000)
+            with urlopen(Request(url, headers=headers), timeout=15) as response:
+                verified = json.loads(response.read(100000))
+            if verified.get("alias") != quiet_exit_config()["alias"]:
+                raise BridgeError("Quiet exit verification failed")
+        with open(QUIET_EXIT_MARKER, "w", encoding="utf-8") as marker:
+            marker.write(QUIET_EXIT_ID)
+        LOG.info("Owner-approved weekday quiet exit automation present")
+    except Exception as exc:
+        LOG.warning("Weekday quiet exit installation not verified: %s", type(exc).__name__)
+
+
 if __name__ == "__main__":
     LOG.setLevel(logging.INFO)
+    install_quiet_exit_once()
     ThreadingHTTPServer(("0.0.0.0", 8099), Handler).serve_forever()

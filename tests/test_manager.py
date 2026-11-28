@@ -185,7 +185,7 @@ class ScopeTests(unittest.TestCase):
         manifest = (ROOT / "horus_dashboard_manager" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("name: Horus DBM", manifest)
         self.assertIn("panel_title: Horus DBM", manifest)
-        self.assertIn("version: 0.3.2", manifest)
+        self.assertIn("version: 0.3.3", manifest)
 
     def test_manager_links_are_styled_buttons(self):
         preview = manager.action_link("preview", "Preview")
@@ -444,3 +444,17 @@ class ACControlsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuietExitTests(unittest.TestCase):
+    def test_fixed_scope_and_schedule(self):
+        cfg = manager.quiet_exit_config()
+        self.assertEqual(cfg["triggers"], [{"trigger": "state", "entity_id": "event.bedroom_master_bdrm_spot_voice_event", "to": None}])
+        self.assertEqual(cfg["conditions"][0], {"condition": "time", "after": "05:31:00", "before": "06:30:00", "weekday": ["mon", "tue", "wed", "thu", "fri"]})
+        self.assertEqual(cfg["conditions"][1], {"condition": "state", "entity_id": "input_boolean.horus_heru_sleeping", "state": "on"})
+        self.assertEqual(cfg["actions"], [{"action": "media_player.volume_set", "target": {"entity_id": "media_player.bedroom_master_bdrm_spot"}, "data": {"volume_level": 0.1}}])
+
+    def test_installer_respects_one_time_marker(self):
+        with patch.object(manager.os.path, "exists", return_value=True), patch.object(manager, "urlopen") as request:
+            manager.install_quiet_exit_once()
+        request.assert_not_called()
