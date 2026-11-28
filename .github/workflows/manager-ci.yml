@@ -25,3 +25,8 @@ jobs:
         run: python -m py_compile horus_dashboard_manager/manager.py horus_update_watcher/watcher.py horus_blink_event_receiver/app.py
       - name: Single-target safety tests
         run: python -m unittest discover -s tests -v
+      - name: Build pinned upstream receiver and verify adapter imports
+        if: contains(github.event.head_commit.message, 'Blink') || github.event_name == 'pull_request'
+        run: |
+          docker build -t horus-blink-test horus_blink_event_receiver
+          docker run --rm --entrypoint python horus-blink-test -c 'import horus_blink_app; from receiver.blink_live_events import daemon, ha_delivery, blink_account; assert callable(daemon.listen) and callable(ha_delivery.HomeAssistantWebhook) and callable(blink_account._authorization_url) and callable(blink_account._callback_code) and callable(blink_account.associate_fcm_token)'
